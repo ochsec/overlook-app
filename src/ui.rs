@@ -159,10 +159,17 @@ impl OverlookApp {
                 if self.current_theme_type != before_theme {
                     println!("Theme changed from {:?} to {:?}", before_theme, self.current_theme_type);
                     self.current_theme = Theme::from_theme_type(&self.current_theme_type);
+
+                    // Force complete style refresh by setting to default first, then applying theme
+                    ui.ctx().set_style(egui::Style::default());
                     ui.ctx().style_mut(|style| {
                         self.current_theme.apply_to_egui_style(style);
                     });
+
                     self.save_data();
+
+                    // Request repaint to ensure changes are visible immediately
+                    ui.ctx().request_repaint();
                 }
             });
         });
