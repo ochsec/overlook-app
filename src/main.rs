@@ -2,6 +2,7 @@ mod api;
 mod app;
 mod export;
 mod storage;
+mod theme;
 mod types;
 mod ui;
 

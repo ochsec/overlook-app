@@ -1,4 +1,5 @@
 use crate::app::OverlookApp;
+use crate::theme::{Theme, ThemeType};
 use eframe::egui;
 
 impl eframe::App for OverlookApp {
@@ -56,7 +57,7 @@ impl OverlookApp {
                 ui.horizontal(|ui| {
                     let button = egui::Button::new(&chat.title)
                         .fill(if is_selected {
-                            egui::Color32::from_rgb(0, 102, 204)
+                            self.current_theme.accent
                         } else {
                             egui::Color32::TRANSPARENT
                         });
@@ -141,6 +142,28 @@ impl OverlookApp {
                 if ui.button("📁 Organize").clicked() {
                     self.show_folder_modal = true;
                 }
+
+                // Theme selector
+                ui.separator();
+                ui.label("Theme:");
+                let before_theme = self.current_theme_type;
+                egui::ComboBox::from_id_source("theme_selector")
+                    .selected_text(self.current_theme_type.name())
+                    .show_ui(ui, |ui| {
+                        for theme_type in ThemeType::all_themes() {
+                            ui.selectable_value(&mut self.current_theme_type, theme_type, theme_type.name());
+                        }
+                    });
+
+                // Check if theme selection changed using before/after pattern
+                if self.current_theme_type != before_theme {
+                    println!("Theme changed from {:?} to {:?}", before_theme, self.current_theme_type);
+                    self.current_theme = Theme::from_theme_type(&self.current_theme_type);
+                    ui.ctx().style_mut(|style| {
+                        self.current_theme.apply_to_egui_style(style);
+                    });
+                    self.save_data();
+                }
             });
         });
     }
@@ -191,8 +214,8 @@ impl OverlookApp {
                     &message.content,
                     0.0,
                     egui::TextFormat {
-                        color: egui::Color32::WHITE,
-                        background: egui::Color32::from_rgb(0, 102, 204),
+                        color: self.current_theme.user_message_text,
+                        background: self.current_theme.user_message_bg,
                         ..Default::default()
                     },
                 );
@@ -219,8 +242,8 @@ impl OverlookApp {
                     &message.content,
                     0.0,
                     egui::TextFormat {
-                        color: egui::Color32::WHITE,
-                        background: egui::Color32::from_rgb(45, 45, 45),
+                        color: self.current_theme.assistant_message_text,
+                        background: self.current_theme.assistant_message_bg,
                         ..Default::default()
                     },
                 );

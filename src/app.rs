@@ -1,12 +1,12 @@
 use crate::api::ApiClient;
 use crate::export::Exporter;
 use crate::storage::Storage;
+use crate::theme::{Theme, ThemeType};
 use crate::types::{Chat, ChatMap, FolderMap, Message, OpenRouterModel};
 use chrono::Utc;
 use eframe::egui;
 use poll_promise::Promise;
 
-#[derive(Default)]
 pub struct OverlookApp {
     pub api_key: String,
     pub current_chat_id: Option<String>,
@@ -23,11 +23,40 @@ pub struct OverlookApp {
     pub show_export_modal: bool,
     pub rt: Option<tokio::runtime::Runtime>,
     pub api_promise: Option<Promise<Result<String, String>>>,
+    pub current_theme_type: ThemeType,
+    pub current_theme: Theme,
     api_client: ApiClient,
 }
 
+impl Default for OverlookApp {
+    fn default() -> Self {
+        let theme_type = Storage::load_theme().unwrap_or_default();
+        let theme = Theme::from_theme_type(&theme_type);
+        Self {
+            api_key: String::default(),
+            current_chat_id: None,
+            current_model: String::default(),
+            message_input: String::default(),
+            chats: ChatMap::default(),
+            folders: FolderMap::default(),
+            available_models: Vec::default(),
+            loading_models: bool::default(),
+            sending_message: bool::default(),
+            show_folder_modal: bool::default(),
+            new_folder_name: String::default(),
+            selected_folder_id: String::default(),
+            show_export_modal: bool::default(),
+            rt: None,
+            api_promise: None,
+            current_theme_type: theme_type,
+            current_theme: theme,
+            api_client: ApiClient::new(),
+        }
+    }
+}
+
 impl OverlookApp {
-    pub fn new(_cc: &eframe::CreationContext<'_>) -> Self {
+    pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
         let rt = tokio::runtime::Runtime::new().unwrap();
         let mut app = Self {
             rt: Some(rt),
@@ -35,6 +64,11 @@ impl OverlookApp {
             ..Default::default()
         };
         app.load_data();
+
+        // Apply theme to egui style
+        cc.egui_ctx.style_mut(|style| {
+            app.current_theme.apply_to_egui_style(style);
+        });
 
         // Load models if we have an API key
         if !app.api_key.is_empty() {
@@ -54,6 +88,7 @@ impl OverlookApp {
         let _ = Storage::save_api_key(&self.api_key);
         let _ = Storage::save_chats(&self.chats);
         let _ = Storage::save_folders(&self.folders);
+        let _ = Storage::save_theme(&self.current_theme_type);
     }
 
     pub fn create_new_chat(&mut self) {
@@ -240,6 +275,21 @@ impl OverlookApp {
 
                 self.api_promise = None;
             }
+        }
+    }
+
+    pub fn change_theme(&mut self, ctx: &egui::Context, theme_type: ThemeType) {
+        if self.current_theme_type != theme_type {
+            self.current_theme_type = theme_type;
+            self.current_theme = Theme::from_theme_type(&self.current_theme_type);
+
+            // Apply new theme to egui style
+            ctx.style_mut(|style| {
+                self.current_theme.apply_to_egui_style(style);
+            });
+
+            // Save the theme preference
+            self.save_data();
         }
     }
 }

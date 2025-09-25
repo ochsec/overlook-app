@@ -1,4 +1,5 @@
 use crate::types::{ChatMap, FolderMap};
+use crate::theme::ThemeType;
 use anyhow::Result;
 
 pub struct Storage;
@@ -63,6 +64,33 @@ impl Storage {
             std::fs::create_dir_all(&app_dir)?;
             let folders_json = serde_json::to_string_pretty(folders)?;
             std::fs::write(app_dir.join("folders.json"), folders_json)?;
+        }
+        Ok(())
+    }
+
+    pub fn load_theme() -> Result<ThemeType> {
+        if let Some(data_dir) = dirs::config_dir() {
+            let app_dir = data_dir.join("overlook");
+            if let Ok(theme_data) = std::fs::read_to_string(app_dir.join("theme.txt")) {
+                match theme_data.trim() {
+                    "OneLight" => return Ok(ThemeType::OneLight),
+                    "OneDark" => return Ok(ThemeType::OneDark),
+                    _ => {}
+                }
+            }
+        }
+        Ok(ThemeType::default())
+    }
+
+    pub fn save_theme(theme_type: &ThemeType) -> Result<()> {
+        if let Some(data_dir) = dirs::config_dir() {
+            let app_dir = data_dir.join("overlook");
+            std::fs::create_dir_all(&app_dir)?;
+            let theme_str = match theme_type {
+                ThemeType::OneLight => "OneLight",
+                ThemeType::OneDark => "OneDark",
+            };
+            std::fs::write(app_dir.join("theme.txt"), theme_str)?;
         }
         Ok(())
     }
