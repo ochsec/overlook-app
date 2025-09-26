@@ -94,4 +94,25 @@ impl Storage {
         }
         Ok(())
     }
+
+    pub fn load_font_size() -> Result<f32> {
+        if let Some(data_dir) = dirs::config_dir() {
+            let app_dir = data_dir.join("overlook");
+            if let Ok(font_data) = std::fs::read_to_string(app_dir.join("font_size.txt")) {
+                if let Ok(size) = font_data.trim().parse::<f32>() {
+                    return Ok(size);
+                }
+            }
+        }
+        Ok(14.0) // Default font size
+    }
+
+    pub fn save_font_size(font_size: f32) -> Result<()> {
+        if let Some(data_dir) = dirs::config_dir() {
+            let app_dir = data_dir.join("overlook");
+            std::fs::create_dir_all(&app_dir)?;
+            std::fs::write(app_dir.join("font_size.txt"), font_size.to_string())?;
+        }
+        Ok(())
+    }
 }

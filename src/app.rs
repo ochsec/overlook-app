@@ -1,4 +1,5 @@
 use crate::api::ApiClient;
+use crate::attachments::AttachmentProcessor;
 use crate::export::Exporter;
 use crate::storage::Storage;
 use crate::theme::{Theme, ThemeType};
@@ -25,6 +26,9 @@ pub struct OverlookApp {
     pub api_promise: Option<Promise<Result<String, String>>>,
     pub current_theme_type: ThemeType,
     pub current_theme: Theme,
+    pub font_size: f32,
+    pub selected_attachments: Vec<String>, // File paths of selected attachments
+    pub file_picker_promise: Option<Promise<Option<Vec<String>>>>, // Async file picker
     api_client: ApiClient,
 }
 
@@ -50,6 +54,9 @@ impl Default for OverlookApp {
             api_promise: None,
             current_theme_type: theme_type,
             current_theme: theme,
+            font_size: 14.0, // Default 14pt font size
+            selected_attachments: Vec::new(),
+            file_picker_promise: None,
             api_client: ApiClient::new(),
         }
     }
@@ -67,7 +74,7 @@ impl OverlookApp {
 
         // Apply theme to egui style
         cc.egui_ctx.style_mut(|style| {
-            app.current_theme.apply_to_egui_style(style);
+            app.current_theme.apply_to_egui_style(style, app.font_size);
         });
 
         // Load models if we have an API key
@@ -82,6 +89,7 @@ impl OverlookApp {
         self.api_key = Storage::load_api_key().unwrap_or_default();
         self.chats = Storage::load_chats().unwrap_or_default();
         self.folders = Storage::load_folders().unwrap_or_default();
+        self.font_size = Storage::load_font_size().unwrap_or(14.0);
     }
 
     pub fn save_data(&self) {
@@ -89,6 +97,7 @@ impl OverlookApp {
         let _ = Storage::save_chats(&self.chats);
         let _ = Storage::save_folders(&self.folders);
         let _ = Storage::save_theme(&self.current_theme_type);
+        let _ = Storage::save_font_size(self.font_size);
     }
 
     pub fn create_new_chat(&mut self) {
@@ -175,10 +184,24 @@ impl OverlookApp {
         }
 
         let chat_id = self.current_chat_id.as_ref().unwrap().clone();
+
+        // Process attachments
+        let mut attachments = Vec::new();
+        for file_path in &self.selected_attachments {
+            match AttachmentProcessor::process_file(file_path) {
+                Ok(attachment) => attachments.push(attachment),
+                Err(e) => {
+                    eprintln!("Error processing attachment {}: {}", file_path, e);
+                    // Could show error to user in UI instead
+                }
+            }
+        }
+
         let user_message = Message {
             role: "user".to_string(),
             content: self.message_input.clone(),
             timestamp: Utc::now(),
+            attachments,
         };
 
         // Add user message immediately - this will show in UI right away
@@ -193,8 +216,9 @@ impl OverlookApp {
             }
         }
 
-        // Clear input and set sending state
+        // Clear input and attachments, set sending state
         self.message_input.clear();
+        self.selected_attachments.clear();
         self.sending_message = true;
         self.save_data();
 
@@ -249,6 +273,7 @@ impl OverlookApp {
                                 role: "assistant".to_string(),
                                 content: assistant_response.clone(),
                                 timestamp: Utc::now(),
+                                attachments: Vec::new(),
                             };
 
                             if let Some(chat) = self.chats.get_mut(current_chat_id) {
@@ -262,6 +287,7 @@ impl OverlookApp {
                                 role: "assistant".to_string(),
                                 content: format!("Error: {}", e),
                                 timestamp: Utc::now(),
+                                attachments: Vec::new(),
                             };
 
                             if let Some(chat) = self.chats.get_mut(current_chat_id) {
@@ -285,11 +311,48 @@ impl OverlookApp {
 
             // Apply new theme to egui style
             ctx.style_mut(|style| {
-                self.current_theme.apply_to_egui_style(style);
+                self.current_theme.apply_to_egui_style(style, self.font_size);
             });
 
             // Save the theme preference
             self.save_data();
+        }
+    }
+
+    pub fn open_file_picker(&mut self) {
+        // Start async file picker without blocking
+        let promise = Promise::spawn_thread("file_picker", move || {
+            let rt = tokio::runtime::Runtime::new().unwrap();
+            rt.block_on(async move {
+                let files = rfd::AsyncFileDialog::new()
+                    .add_filter("Images", &["png", "jpg", "jpeg", "gif", "webp", "bmp"])
+                    .add_filter("PDFs", &["pdf"])
+                    .add_filter("Text files", &["txt", "md", "json", "xml", "csv", "log"])
+                    .add_filter("All supported", &["png", "jpg", "jpeg", "gif", "webp", "bmp", "pdf", "txt", "md", "json", "xml", "csv", "log"])
+                    .pick_files()
+                    .await;
+
+                // Convert to file paths
+                files.map(|files| {
+                    files.into_iter()
+                        .map(|file| file.path().to_string_lossy().to_string())
+                        .filter(|path| crate::attachments::AttachmentProcessor::is_supported_file(path))
+                        .collect::<Vec<String>>()
+                })
+            })
+        });
+
+        self.file_picker_promise = Some(promise);
+    }
+
+    pub fn handle_file_picker_response(&mut self) {
+        if let Some(promise) = &self.file_picker_promise {
+            if let Some(result) = promise.ready() {
+                if let Some(file_paths) = result {
+                    self.selected_attachments.extend(file_paths.clone());
+                }
+                self.file_picker_promise = None;
+            }
         }
     }
 }

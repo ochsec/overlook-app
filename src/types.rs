@@ -3,10 +3,25 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct Attachment {
+    pub file_name: String,
+    pub file_path: String,
+    pub mime_type: String,
+    pub data: AttachmentData,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub enum AttachmentData {
+    Image { base64: String },
+    Text { content: String }, // For processed PDFs and text files
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct Message {
     pub role: String,
     pub content: String,
     pub timestamp: DateTime<Utc>,
+    pub attachments: Vec<Attachment>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]

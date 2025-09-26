@@ -7,6 +7,9 @@ impl eframe::App for OverlookApp {
         // Check for completed API promise
         self.handle_api_response();
 
+        // Check for completed file picker
+        self.handle_file_picker_response();
+
         self.render_sidebar(ctx);
         self.render_main_content(ctx);
         self.render_modals(ctx);
@@ -155,15 +158,29 @@ impl OverlookApp {
                         }
                     });
 
-                // Check if theme selection changed using before/after pattern
-                if self.current_theme_type != before_theme {
-                    println!("Theme changed from {:?} to {:?}", before_theme, self.current_theme_type);
-                    self.current_theme = Theme::from_theme_type(&self.current_theme_type);
+                // Font size control
+                ui.separator();
+                ui.label("Font Size:");
+                let before_font_size = self.font_size;
+                ui.add(egui::Slider::new(&mut self.font_size, 10.0..=20.0).suffix("pt"));
+
+                // Check if theme or font size changed
+                let theme_changed = self.current_theme_type != before_theme;
+                let font_changed = (self.font_size - before_font_size).abs() > 0.1;
+
+                if theme_changed || font_changed {
+                    if theme_changed {
+                        println!("Theme changed from {:?} to {:?}", before_theme, self.current_theme_type);
+                        self.current_theme = Theme::from_theme_type(&self.current_theme_type);
+                    }
+                    if font_changed {
+                        println!("Font size changed to: {:.1}pt", self.font_size);
+                    }
 
                     // Force complete style refresh by setting to default first, then applying theme
                     ui.ctx().set_style(egui::Style::default());
                     ui.ctx().style_mut(|style| {
-                        self.current_theme.apply_to_egui_style(style);
+                        self.current_theme.apply_to_egui_style(style, self.font_size);
                     });
 
                     self.save_data();
@@ -223,6 +240,7 @@ impl OverlookApp {
                     egui::TextFormat {
                         color: self.current_theme.user_message_text,
                         background: self.current_theme.user_message_bg,
+                        font_id: egui::FontId::new(self.font_size, egui::FontFamily::Proportional),
                         ..Default::default()
                     },
                 );
@@ -251,6 +269,7 @@ impl OverlookApp {
                     egui::TextFormat {
                         color: self.current_theme.assistant_message_text,
                         background: self.current_theme.assistant_message_bg,
+                        font_id: egui::FontId::new(self.font_size, egui::FontFamily::Proportional),
                         ..Default::default()
                     },
                 );
@@ -275,8 +294,39 @@ impl OverlookApp {
         ui.vertical(|ui| {
             ui.add_space(5.0);
 
+            // Attachment area
+            if !self.selected_attachments.is_empty() {
+                ui.horizontal_wrapped(|ui| {
+                    ui.label("Attachments:");
+                    let mut to_remove = None;
+                    for (i, file_path) in self.selected_attachments.iter().enumerate() {
+                        let file_name = std::path::Path::new(file_path)
+                            .file_name()
+                            .and_then(|n| n.to_str())
+                            .unwrap_or("unknown");
+
+                        ui.horizontal(|ui| {
+                            ui.label(format!("📎 {}", file_name));
+                            if ui.small_button("❌").clicked() {
+                                to_remove = Some(i);
+                            }
+                        });
+                    }
+
+                    if let Some(i) = to_remove {
+                        self.selected_attachments.remove(i);
+                    }
+                });
+                ui.add_space(5.0);
+            }
+
             // Input area with better sizing
             ui.horizontal(|ui| {
+                // Attach button
+                if ui.button("📎 Attach").clicked() {
+                    self.open_file_picker();
+                }
+
                 // Large text input that takes most of the width
                 let text_edit_response = ui.add_sized(
                     [ui.available_width() - 80.0, 60.0], // Make input much taller

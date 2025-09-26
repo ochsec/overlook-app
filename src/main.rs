@@ -1,5 +1,6 @@
 mod api;
 mod app;
+mod attachments;
 mod export;
 mod storage;
 mod theme;
