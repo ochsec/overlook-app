@@ -7,6 +7,7 @@ use crate::types::{Chat, ChatMap, FolderMap, Message, OpenRouterModel};
 use chrono::Utc;
 use eframe::egui;
 use poll_promise::Promise;
+use std::sync::mpsc;
 
 pub struct OverlookApp {
     pub api_key: String,
@@ -29,6 +30,11 @@ pub struct OverlookApp {
     pub font_size: f32,
     pub selected_attachments: Vec<String>, // File paths of selected attachments
     pub file_picker_promise: Option<Promise<Option<Vec<String>>>>, // Async file picker
+    pub streaming_enabled: bool,
+    pub streaming_message: String, // Current streaming message content
+    pub streaming_active: bool,
+    pub streaming_promise: Option<Promise<Result<String, String>>>,
+    pub token_receiver: Option<mpsc::Receiver<String>>,
     api_client: ApiClient,
 }
 
@@ -57,6 +63,11 @@ impl Default for OverlookApp {
             font_size: 14.0, // Default 14pt font size
             selected_attachments: Vec::new(),
             file_picker_promise: None,
+            streaming_enabled: true, // Enable streaming by default
+            streaming_message: String::new(),
+            streaming_active: false,
+            streaming_promise: None,
+            token_receiver: None,
             api_client: ApiClient::new(),
         }
     }
@@ -68,6 +79,11 @@ impl OverlookApp {
         let mut app = Self {
             rt: Some(rt),
             api_client: ApiClient::new(),
+            streaming_enabled: true,
+            streaming_message: String::new(),
+            streaming_active: false,
+            streaming_promise: None,
+            token_receiver: None,
             ..Default::default()
         };
         app.load_data();
@@ -174,9 +190,12 @@ impl OverlookApp {
             return;
         }
 
-        if self.sending_message {
-            return; // Already sending a message
+        if self.sending_message || self.streaming_active {
+            println!("Prevented duplicate send: sending={}, streaming={}", self.sending_message, self.streaming_active);
+            return; // Already sending a message or streaming
         }
+
+        println!("Starting new message send (streaming enabled: {})", self.streaming_enabled);
 
         // Create chat if needed
         if self.current_chat_id.is_none() {
@@ -221,7 +240,6 @@ impl OverlookApp {
         // Clear input and attachments, set sending state
         self.message_input.clear();
         self.selected_attachments.clear();
-        self.sending_message = true;
         self.save_data();
 
         // Start async API call
@@ -231,18 +249,68 @@ impl OverlookApp {
             .map(|m| serde_json::json!({"role": m.role, "content": m.content}))
             .collect();
 
-        let promise = Promise::spawn_thread("api_call", move || {
-            let rt = tokio::runtime::Runtime::new().unwrap();
-            rt.block_on(async move {
-                let api_client = ApiClient::new();
-                match api_client.send_chat_message(&api_key, &model, messages).await {
-                    Ok(response) => Ok(response),
-                    Err(e) => Err(format!("API request failed: {}", e)),
-                }
-            })
-        });
+        if self.streaming_enabled {
+            // Use real-time streaming with channel communication
+            self.streaming_active = true;
+            self.streaming_message.clear();
 
-        self.api_promise = Some(promise);
+            // Create channel for real-time token communication
+            let (token_sender, token_receiver) = mpsc::channel();
+            self.token_receiver = Some(token_receiver);
+
+            let promise = Promise::spawn_thread("streaming_api_call", move || {
+                let rt = tokio::runtime::Runtime::new().unwrap();
+                rt.block_on(async move {
+                    use futures_util::StreamExt;
+
+                    let api_client = ApiClient::new();
+                    match api_client.stream_chat_completion(&api_key, &model, messages).await {
+                        Ok(stream) => {
+                            let mut full_response = String::new();
+                            let mut pinned_stream = Box::pin(stream);
+
+                            while let Some(token_result) = pinned_stream.next().await {
+                                match token_result {
+                                    Ok(token) => {
+                                        full_response.push_str(&token);
+
+                                        // Send token to UI immediately for real-time display
+                                        if token_sender.send(token).is_err() {
+                                            // UI has been dropped, stop streaming
+                                            break;
+                                        }
+                                    }
+                                    Err(e) => {
+                                        return Err(format!("Token stream error: {}", e));
+                                    }
+                                }
+                            }
+
+                            Ok(full_response)
+                        }
+                        Err(e) => Err(format!("Streaming API request failed: {}", e)),
+                    }
+                })
+            });
+
+            self.streaming_promise = Some(promise);
+        } else {
+            // Use traditional non-streaming
+            self.sending_message = true;
+
+            let promise = Promise::spawn_thread("api_call", move || {
+                let rt = tokio::runtime::Runtime::new().unwrap();
+                rt.block_on(async move {
+                    let api_client = ApiClient::new();
+                    match api_client.send_chat_message(&api_key, &model, messages).await {
+                        Ok(response) => Ok(response),
+                        Err(e) => Err(format!("API request failed: {}", e)),
+                    }
+                })
+            });
+
+            self.api_promise = Some(promise);
+        }
     }
 
     pub fn delete_chat(&mut self, chat_id: &str) {
@@ -263,9 +331,92 @@ impl OverlookApp {
         }
     }
 
+    pub fn handle_streaming_tokens(&mut self, ctx: &egui::Context) {
+        if let Some(receiver) = &self.token_receiver {
+            let mut received_tokens = false;
+            // Process all available tokens
+            while let Ok(token) = receiver.try_recv() {
+                self.streaming_message.push_str(&token);
+                received_tokens = true;
+            }
+            // Only request repaint if we actually received new tokens
+            if received_tokens {
+                ctx.request_repaint();
+            }
+        }
+    }
+
+    pub fn handle_streaming_response(&mut self) {
+        if let Some(promise) = &self.streaming_promise {
+            if let Some(result) = promise.ready() {
+                self.streaming_active = false;
+                self.token_receiver = None; // Clean up the token receiver
+
+                if let Some(current_chat_id) = &self.current_chat_id {
+                    match result {
+                        Ok(full_response) => {
+                            println!("Streaming completed successfully. Response length: {} characters", full_response.len());
+
+                            // Use the content from streaming_message which contains real-time updates
+                            // This ensures we capture exactly what the user saw during streaming
+                            let final_content = if !self.streaming_message.is_empty() {
+                                self.streaming_message.clone()
+                            } else {
+                                // Fallback to full_response if streaming_message is empty
+                                full_response.clone()
+                            };
+
+                            let assistant_message = Message {
+                                role: "assistant".to_string(),
+                                content: final_content,
+                                timestamp: Utc::now(),
+                                attachments: Vec::new(),
+                            };
+
+                            if let Some(chat) = self.chats.get_mut(current_chat_id) {
+                                chat.messages.push(assistant_message);
+                                chat.updated_at = Utc::now();
+                                chat.model = self.current_model.clone();
+                            }
+                        }
+                        Err(e) => {
+                            println!("Streaming error: {}", e);
+
+                            // Check if this is a rate limit error and provide better feedback
+                            let error_content = if e.contains("Rate limit exceeded") {
+                                "Rate limit exceeded. Please wait a few minutes before trying again, or try a different model.".to_string()
+                            } else if e.contains("API Error 429") {
+                                "Too many requests. Please wait before sending another message.".to_string()
+                            } else {
+                                format!("Streaming error: {}", e)
+                            };
+
+                            let error_message = Message {
+                                role: "assistant".to_string(),
+                                content: error_content,
+                                timestamp: Utc::now(),
+                                attachments: Vec::new(),
+                            };
+
+                            if let Some(chat) = self.chats.get_mut(current_chat_id) {
+                                chat.messages.push(error_message);
+                            }
+                        }
+                    }
+
+                    self.streaming_message.clear();
+                    self.save_data();
+                }
+
+                self.streaming_promise = None;
+            }
+        }
+    }
+
     pub fn handle_api_response(&mut self) {
         if let Some(promise) = &self.api_promise {
             if let Some(result) = promise.ready() {
+                // Handle traditional non-streaming completion
                 self.sending_message = false;
 
                 if let Some(current_chat_id) = &self.current_chat_id {

@@ -4,6 +4,12 @@ use eframe::egui;
 
 impl eframe::App for OverlookApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        // Check for streaming tokens
+        self.handle_streaming_tokens(ctx);
+
+        // Check for completed streaming response
+        self.handle_streaming_response();
+
         // Check for completed API promise
         self.handle_api_response();
 
@@ -13,6 +19,9 @@ impl eframe::App for OverlookApp {
         self.render_sidebar(ctx);
         self.render_main_content(ctx);
         self.render_modals(ctx);
+
+        // Request repaint only when we actually have streaming updates
+        // (The handle_streaming_tokens method will request repaints when tokens arrive)
     }
 }
 
@@ -164,6 +173,10 @@ impl OverlookApp {
                 let before_font_size = self.font_size;
                 ui.add(egui::Slider::new(&mut self.font_size, 10.0..=20.0).suffix("pt"));
 
+                // Streaming toggle
+                ui.separator();
+                ui.checkbox(&mut self.streaming_enabled, "🔄 Stream");
+
                 // Check if theme or font size changed
                 let theme_changed = self.current_theme_type != before_theme;
                 let font_changed = (self.font_size - before_font_size).abs() > 0.1;
@@ -205,7 +218,20 @@ impl OverlookApp {
                             self.render_message(ui, message);
                         }
 
-                        if self.sending_message {
+                        // Show streaming message if active
+                        if self.streaming_active && !self.streaming_message.is_empty() {
+                            self.render_streaming_message(ui);
+                        }
+
+                        // Show status messages
+                        if self.streaming_active {
+                            ui.horizontal(|ui| {
+                                ui.add_space(20.0);
+                                ui.label(egui::RichText::new("🔄 AI is streaming...")
+                                    .color(egui::Color32::GRAY)
+                                    .italics());
+                            });
+                        } else if self.sending_message {
                             ui.horizontal(|ui| {
                                 ui.add_space(20.0);
                                 ui.label(egui::RichText::new("AI is typing...")
@@ -290,6 +316,55 @@ impl OverlookApp {
         ui.add_space(8.0);
     }
 
+    fn render_streaming_message(&self, ui: &mut egui::Ui) {
+        ui.add_space(5.0);
+
+        // Assistant streaming message - left aligned with gray background and typing indicator
+        ui.horizontal(|ui| {
+            ui.add_space(20.0); // Left margin
+
+            let mut job = egui::text::LayoutJob::default();
+            job.append(
+                &self.streaming_message,
+                0.0,
+                egui::TextFormat {
+                    color: self.current_theme.assistant_message_text,
+                    background: self.current_theme.assistant_message_bg,
+                    font_id: egui::FontId::new(self.font_size, egui::FontFamily::Proportional),
+                    ..Default::default()
+                },
+            );
+
+            // Add a blinking cursor effect
+            let time = ui.input(|i| i.time);
+            if (time * 2.0) as i32 % 2 == 0 {
+                job.append(
+                    "▊",
+                    0.0,
+                    egui::TextFormat {
+                        color: self.current_theme.assistant_message_text,
+                        background: self.current_theme.assistant_message_bg,
+                        font_id: egui::FontId::new(self.font_size, egui::FontFamily::Proportional),
+                        ..Default::default()
+                    },
+                );
+            }
+
+            ui.allocate_ui_with_layout(
+                [ui.available_width() * 0.8, 0.0].into(),
+                egui::Layout::top_down(egui::Align::LEFT),
+                |ui| {
+                    ui.add(
+                        egui::Label::new(job)
+                            .wrap()
+                            .selectable(true)
+                    );
+                }
+            );
+        });
+        ui.add_space(8.0);
+    }
+
     fn render_input_area(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
         ui.vertical(|ui| {
             ui.add_space(5.0);
@@ -338,19 +413,27 @@ impl OverlookApp {
                 // Handle Enter key to send (but not Shift+Enter)
                 if text_edit_response.has_focus() && ui.input(|i| {
                     i.key_pressed(egui::Key::Enter) && !i.modifiers.shift
-                }) {
+                }) && !self.sending_message && !self.streaming_active {
                     self.send_message(ctx);
                 }
 
                 // Send button
                 ui.vertical(|ui| {
                     ui.add_space(15.0); // Center the button vertically
+                    let button_text = if self.streaming_active {
+                        "Streaming..."
+                    } else if self.sending_message {
+                        "Sending..."
+                    } else {
+                        "Send"
+                    };
+
                     let send_btn = ui.add_sized(
                         [70.0, 30.0],
-                        egui::Button::new(if self.sending_message { "Sending..." } else { "Send" })
+                        egui::Button::new(button_text)
                     );
 
-                    if send_btn.clicked() && !self.sending_message {
+                    if send_btn.clicked() && !self.sending_message && !self.streaming_active {
                         self.send_message(ctx);
                     }
                 });
