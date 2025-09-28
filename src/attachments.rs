@@ -65,7 +65,7 @@ impl AttachmentProcessor {
             ));
         }
 
-        Ok(text)
+        Ok(text.trim().to_string())
     }
 
     pub fn get_supported_extensions() -> Vec<&'static str> {

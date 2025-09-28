@@ -189,7 +189,9 @@ impl OverlookApp {
         let mut attachments = Vec::new();
         for file_path in &self.selected_attachments {
             match AttachmentProcessor::process_file(file_path) {
-                Ok(attachment) => attachments.push(attachment),
+                Ok(attachment) => {
+                    attachments.push(attachment);
+                },
                 Err(e) => {
                     eprintln!("Error processing attachment {}: {}", file_path, e);
                     // Could show error to user in UI instead
