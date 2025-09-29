@@ -224,7 +224,7 @@ impl OverlookApp {
                         }
 
                         // Show status messages
-                        if self.streaming_active {
+                        if self.streaming_active && !self.stream_completed {
                             ui.horizontal(|ui| {
                                 ui.add_space(20.0);
                                 ui.label(egui::RichText::new("🔄 AI is streaming...")
@@ -335,19 +335,21 @@ impl OverlookApp {
                 },
             );
 
-            // Add a blinking cursor effect
-            let time = ui.input(|i| i.time);
-            if (time * 2.0) as i32 % 2 == 0 {
-                job.append(
-                    "▊",
-                    0.0,
-                    egui::TextFormat {
-                        color: self.current_theme.assistant_message_text,
-                        background: self.current_theme.assistant_message_bg,
-                        font_id: egui::FontId::new(self.font_size, egui::FontFamily::Proportional),
-                        ..Default::default()
-                    },
-                );
+            // Add a blinking cursor effect only while actively streaming
+            if !self.stream_completed {
+                let time = ui.input(|i| i.time);
+                if (time * 2.0) as i32 % 2 == 0 {
+                    job.append(
+                        "▊",
+                        0.0,
+                        egui::TextFormat {
+                            color: self.current_theme.assistant_message_text,
+                            background: self.current_theme.assistant_message_bg,
+                            font_id: egui::FontId::new(self.font_size, egui::FontFamily::Proportional),
+                            ..Default::default()
+                        },
+                    );
+                }
             }
 
             ui.allocate_ui_with_layout(
@@ -413,14 +415,14 @@ impl OverlookApp {
                 // Handle Enter key to send (but not Shift+Enter)
                 if text_edit_response.has_focus() && ui.input(|i| {
                     i.key_pressed(egui::Key::Enter) && !i.modifiers.shift
-                }) && !self.sending_message && !self.streaming_active {
+                }) && !self.sending_message && (!self.streaming_active || self.stream_completed) {
                     self.send_message(ctx);
                 }
 
                 // Send button
                 ui.vertical(|ui| {
                     ui.add_space(15.0); // Center the button vertically
-                    let button_text = if self.streaming_active {
+                    let button_text = if self.streaming_active && !self.stream_completed {
                         "Streaming..."
                     } else if self.sending_message {
                         "Sending..."
@@ -433,7 +435,7 @@ impl OverlookApp {
                         egui::Button::new(button_text)
                     );
 
-                    if send_btn.clicked() && !self.sending_message && !self.streaming_active {
+                    if send_btn.clicked() && !self.sending_message && (!self.streaming_active || self.stream_completed) {
                         self.send_message(ctx);
                     }
                 });

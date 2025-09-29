@@ -33,8 +33,12 @@ pub struct OverlookApp {
     pub streaming_enabled: bool,
     pub streaming_message: String, // Current streaming message content
     pub streaming_active: bool,
+    pub stream_completed: bool, // True when API stream ends, but chars may still be displaying
     pub streaming_promise: Option<Promise<Result<String, String>>>,
     pub token_receiver: Option<mpsc::Receiver<String>>,
+    pub char_buffer: String, // Buffer for smooth character-by-character display
+    pub char_display_index: usize, // Current position in character display
+    pub last_char_time: std::time::Instant, // For timing character releases
     api_client: ApiClient,
 }
 
@@ -66,14 +70,39 @@ impl Default for OverlookApp {
             streaming_enabled: true, // Enable streaming by default
             streaming_message: String::new(),
             streaming_active: false,
+            stream_completed: false,
             streaming_promise: None,
             token_receiver: None,
+            char_buffer: String::new(),
+            char_display_index: 0,
+            last_char_time: std::time::Instant::now(),
             api_client: ApiClient::new(),
         }
     }
 }
 
 impl OverlookApp {
+    /// Create an optimized Tokio runtime based on the target platform
+    fn create_optimized_runtime() -> Result<tokio::runtime::Runtime, String> {
+        // Use single-threaded runtime only for Linux ARM64 (Raspberry Pi)
+        // Keep multi-threaded for macOS (even on Apple Silicon) and other platforms
+        if cfg!(all(target_arch = "aarch64", target_os = "linux")) {
+            // Single-threaded runtime for Raspberry Pi - much more efficient
+            println!("🔧 Creating single-threaded runtime for Raspberry Pi (ARM64 Linux)");
+            tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .map_err(|e| format!("Failed to create Raspberry Pi runtime: {}", e))
+        } else {
+            // Multi-threaded runtime for macOS, Windows, and other platforms
+            println!("🔧 Creating multi-threaded runtime for {}",
+                     if cfg!(target_os = "macos") { "macOS" }
+                     else if cfg!(target_os = "windows") { "Windows" }
+                     else { "other platforms" });
+            tokio::runtime::Runtime::new()
+                .map_err(|e| format!("Failed to create runtime: {}", e))
+        }
+    }
     pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
         let rt = tokio::runtime::Runtime::new().unwrap();
         let mut app = Self {
@@ -84,6 +113,9 @@ impl OverlookApp {
             streaming_active: false,
             streaming_promise: None,
             token_receiver: None,
+            char_buffer: String::new(),
+            char_display_index: 0,
+            last_char_time: std::time::Instant::now(),
             ..Default::default()
         };
         app.load_data();
@@ -195,7 +227,11 @@ impl OverlookApp {
             return; // Already sending a message or streaming
         }
 
-        println!("Starting new message send (streaming enabled: {})", self.streaming_enabled);
+        println!("Starting new message send (streaming enabled: {}) on {}",
+                 self.streaming_enabled,
+                 if cfg!(target_os = "macos") { "macOS" }
+                 else if cfg!(all(target_arch = "aarch64", target_os = "linux")) { "Raspberry Pi" }
+                 else { "other platform" });
 
         // Create chat if needed
         if self.current_chat_id.is_none() {
@@ -250,16 +286,27 @@ impl OverlookApp {
             .collect();
 
         if self.streaming_enabled {
-            // Use real-time streaming with channel communication
+            // Use real-time streaming with character-level smoothing
             self.streaming_active = true;
+            self.stream_completed = false;
             self.streaming_message.clear();
+            self.char_buffer.clear();
+            self.char_display_index = 0;
+            self.last_char_time = std::time::Instant::now();
 
             // Create channel for real-time token communication
             let (token_sender, token_receiver) = mpsc::channel();
             self.token_receiver = Some(token_receiver);
 
             let promise = Promise::spawn_thread("streaming_api_call", move || {
-                let rt = tokio::runtime::Runtime::new().unwrap();
+                let rt = match Self::create_optimized_runtime() {
+                    Ok(rt) => rt,
+                    Err(e) => {
+                        println!("❌ Failed to create optimized runtime: {}", e);
+                        return Err(e);
+                    }
+                };
+
                 rt.block_on(async move {
                     use futures_util::StreamExt;
 
@@ -273,6 +320,9 @@ impl OverlookApp {
                                 match token_result {
                                     Ok(token) => {
                                         full_response.push_str(&token);
+
+                                        // Debug: Show token details
+                                        println!("🔧 Token received: {:?} (length: {})", token, token.len());
 
                                         // Send token to UI immediately for real-time display
                                         if token_sender.send(token).is_err() {
@@ -299,7 +349,14 @@ impl OverlookApp {
             self.sending_message = true;
 
             let promise = Promise::spawn_thread("api_call", move || {
-                let rt = tokio::runtime::Runtime::new().unwrap();
+                let rt = match Self::create_optimized_runtime() {
+                    Ok(rt) => rt,
+                    Err(e) => {
+                        println!("❌ Failed to create optimized runtime: {}", e);
+                        return Err(e);
+                    }
+                };
+
                 rt.block_on(async move {
                     let api_client = ApiClient::new();
                     match api_client.send_chat_message(&api_key, &model, messages).await {
@@ -333,14 +390,42 @@ impl OverlookApp {
 
     pub fn handle_streaming_tokens(&mut self, ctx: &egui::Context) {
         if let Some(receiver) = &self.token_receiver {
-            let mut received_tokens = false;
-            // Process all available tokens
+            let mut received_new_tokens = false;
+
+            // 1. Collect new tokens into buffer
             while let Ok(token) = receiver.try_recv() {
-                self.streaming_message.push_str(&token);
-                received_tokens = true;
+                println!("🔧 Token buffered: {:?} (length: {})", token, token.len());
+                self.char_buffer.push_str(&token);
+                received_new_tokens = true;
             }
-            // Only request repaint if we actually received new tokens
-            if received_tokens {
+
+            // 2. Smooth character-by-character release from buffer
+            let now = std::time::Instant::now();
+            let char_interval = std::time::Duration::from_millis(15); // ~67 chars/sec for smooth effect
+
+            if now.duration_since(self.last_char_time) >= char_interval &&
+               self.char_display_index < self.char_buffer.len() {
+
+                // Add next character to display
+                if let Some(next_char) = self.char_buffer.chars().nth(self.char_display_index) {
+                    self.streaming_message.push(next_char);
+                    self.char_display_index += 1;
+                    self.last_char_time = now;
+
+                    println!("🎮 Character displayed: {:?} (progress: {}/{})",
+                             next_char, self.char_display_index, self.char_buffer.len());
+
+                    ctx.request_repaint();
+                }
+            }
+
+            // 3. Continue updating if there are more characters to display
+            if self.char_display_index < self.char_buffer.len() {
+                ctx.request_repaint_after(char_interval);
+            }
+
+            // 4. Request repaint if we got new tokens (for immediate buffer effect)
+            if received_new_tokens {
                 ctx.request_repaint();
             }
         }
@@ -349,20 +434,34 @@ impl OverlookApp {
     pub fn handle_streaming_response(&mut self) {
         if let Some(promise) = &self.streaming_promise {
             if let Some(result) = promise.ready() {
+                // Mark stream as completed (stops streaming animation)
+                self.stream_completed = true;
+
+                // Check if we're still displaying characters from the buffer
+                let still_displaying = self.char_display_index < self.char_buffer.len();
+
+                if still_displaying {
+                    // Stream is complete but we're still displaying characters
+                    // Wait until all characters are displayed before finalizing
+                    return;
+                }
+
                 self.streaming_active = false;
                 self.token_receiver = None; // Clean up the token receiver
 
                 if let Some(current_chat_id) = &self.current_chat_id {
                     match result {
                         Ok(full_response) => {
-                            println!("Streaming completed successfully. Response length: {} characters", full_response.len());
+                            println!("✅ Streaming completed successfully. Response length: {} characters", full_response.len());
 
-                            // Use the content from streaming_message which contains real-time updates
-                            // This ensures we capture exactly what the user saw during streaming
-                            let final_content = if !self.streaming_message.is_empty() {
+                            // Use the complete buffer content for the final message
+                            // This ensures we get the full response even if character display is still catching up
+                            let final_content = if !self.char_buffer.is_empty() {
+                                self.char_buffer.clone()
+                            } else if !self.streaming_message.is_empty() {
                                 self.streaming_message.clone()
                             } else {
-                                // Fallback to full_response if streaming_message is empty
+                                // Fallback to full_response
                                 full_response.clone()
                             };
 
@@ -404,7 +503,11 @@ impl OverlookApp {
                         }
                     }
 
+                    // Clean up streaming state
                     self.streaming_message.clear();
+                    self.char_buffer.clear();
+                    self.char_display_index = 0;
+                    self.stream_completed = false;
                     self.save_data();
                 }
 
