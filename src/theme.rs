@@ -67,68 +67,68 @@ impl Theme {
     pub fn one_light() -> Self {
         Theme {
             // One Light - Based on Atom's One Light theme
-            background: egui::Color32::from_rgb(250, 250, 250),           // #fafafa
-            surface: egui::Color32::from_rgb(255, 255, 255),              // #ffffff
-            sidebar_background: egui::Color32::from_rgb(245, 245, 245),   // #f5f5f5
+            background: egui::Color32::from_rgb(250, 250, 250), // #fafafa
+            surface: egui::Color32::from_rgb(255, 255, 255),    // #ffffff
+            sidebar_background: egui::Color32::from_rgb(245, 245, 245), // #f5f5f5
 
-            text_primary: egui::Color32::from_rgb(56, 58, 66),            // #383a42
-            text_secondary: egui::Color32::from_rgb(106, 115, 125),       // #6a737d
-            text_muted: egui::Color32::from_rgb(160, 161, 167),           // #a0a1a7
+            text_primary: egui::Color32::from_rgb(56, 58, 66), // #383a42
+            text_secondary: egui::Color32::from_rgb(106, 115, 125), // #6a737d
+            text_muted: egui::Color32::from_rgb(160, 161, 167), // #a0a1a7
 
-            accent: egui::Color32::from_rgb(64, 120, 242),                // #4078f2
-            accent_hover: egui::Color32::from_rgb(45, 100, 220),          // #2d64dc
-            border: egui::Color32::from_rgb(228, 229, 233),               // #e4e5e9
-            separator: egui::Color32::from_rgb(234, 236, 239),            // #eaecef
+            accent: egui::Color32::from_rgb(64, 120, 242), // #4078f2
+            accent_hover: egui::Color32::from_rgb(45, 100, 220), // #2d64dc
+            border: egui::Color32::from_rgb(228, 229, 233), // #e4e5e9
+            separator: egui::Color32::from_rgb(234, 236, 239), // #eaecef
 
-            user_message_bg: egui::Color32::from_rgb(64, 120, 242),       // #4078f2
+            user_message_bg: egui::Color32::from_rgb(64, 120, 242), // #4078f2
             user_message_text: egui::Color32::WHITE,
             assistant_message_bg: egui::Color32::from_rgb(240, 240, 240), // #f0f0f0
             assistant_message_text: egui::Color32::from_rgb(56, 58, 66),  // #383a42
 
-            button_bg: egui::Color32::from_rgb(255, 255, 255),            // #ffffff
-            button_bg_hover: egui::Color32::from_rgb(245, 245, 245),      // #f5f5f5
-            button_text: egui::Color32::from_rgb(56, 58, 66),             // #383a42
-            button_primary_bg: egui::Color32::from_rgb(64, 120, 242),     // #4078f2
+            button_bg: egui::Color32::from_rgb(255, 255, 255), // #ffffff
+            button_bg_hover: egui::Color32::from_rgb(245, 245, 245), // #f5f5f5
+            button_text: egui::Color32::from_rgb(56, 58, 66),  // #383a42
+            button_primary_bg: egui::Color32::from_rgb(64, 120, 242), // #4078f2
             button_primary_bg_hover: egui::Color32::from_rgb(45, 100, 220), // #2d64dc
             button_primary_text: egui::Color32::WHITE,
 
-            input_bg: egui::Color32::from_rgb(255, 255, 255),             // #ffffff
-            input_border: egui::Color32::from_rgb(228, 229, 233),         // #e4e5e9
-            input_text: egui::Color32::from_rgb(56, 58, 66),              // #383a42
+            input_bg: egui::Color32::from_rgb(255, 255, 255), // #ffffff
+            input_border: egui::Color32::from_rgb(228, 229, 233), // #e4e5e9
+            input_text: egui::Color32::from_rgb(56, 58, 66),  // #383a42
         }
     }
 
     pub fn one_dark() -> Self {
         Theme {
             // One Dark - Based on Atom's One Dark theme with improved contrast
-            background: egui::Color32::from_rgb(40, 44, 52),              // #282c34
-            surface: egui::Color32::from_rgb(33, 37, 43),                 // #21252b
-            sidebar_background: egui::Color32::from_rgb(35, 39, 46),      // #23272e
+            background: egui::Color32::from_rgb(40, 44, 52), // #282c34
+            surface: egui::Color32::from_rgb(33, 37, 43),    // #21252b
+            sidebar_background: egui::Color32::from_rgb(35, 39, 46), // #23272e
 
-            text_primary: egui::Color32::from_rgb(220, 223, 228),         // #dcdfe4 - Much brighter for better contrast
-            text_secondary: egui::Color32::from_rgb(180, 187, 197),       // #b4bbc5 - Brighter secondary text
-            text_muted: egui::Color32::from_rgb(130, 137, 151),           // #828997 - Slightly brighter muted text
+            text_primary: egui::Color32::from_rgb(220, 223, 228), // #dcdfe4 - Much brighter for better contrast
+            text_secondary: egui::Color32::from_rgb(180, 187, 197), // #b4bbc5 - Brighter secondary text
+            text_muted: egui::Color32::from_rgb(130, 137, 151), // #828997 - Slightly brighter muted text
 
-            accent: egui::Color32::from_rgb(97, 175, 239),                // #61afef
-            accent_hover: egui::Color32::from_rgb(75, 155, 220),          // #4b9bdc
-            border: egui::Color32::from_rgb(55, 59, 69),                  // #373b45
-            separator: egui::Color32::from_rgb(50, 54, 64),               // #323640
+            accent: egui::Color32::from_rgb(97, 175, 239), // #61afef
+            accent_hover: egui::Color32::from_rgb(75, 155, 220), // #4b9bdc
+            border: egui::Color32::from_rgb(55, 59, 69),   // #373b45
+            separator: egui::Color32::from_rgb(50, 54, 64), // #323640
 
-            user_message_bg: egui::Color32::from_rgb(97, 175, 239),       // #61afef
-            user_message_text: egui::Color32::WHITE,                      // Pure white for maximum contrast
-            assistant_message_bg: egui::Color32::from_rgb(45, 49, 57),    // #2d3139 - Slightly lighter background
+            user_message_bg: egui::Color32::from_rgb(97, 175, 239), // #61afef
+            user_message_text: egui::Color32::WHITE, // Pure white for maximum contrast
+            assistant_message_bg: egui::Color32::from_rgb(45, 49, 57), // #2d3139 - Slightly lighter background
             assistant_message_text: egui::Color32::from_rgb(220, 223, 228), // #dcdfe4 - Much brighter text
 
-            button_bg: egui::Color32::from_rgb(65, 70, 80),               // #41464f - Lighter for better contrast
-            button_bg_hover: egui::Color32::from_rgb(75, 80, 90),         // #4b505a - Even lighter on hover
-            button_text: egui::Color32::from_rgb(220, 223, 228),          // #dcdfe4 - Bright button text
-            button_primary_bg: egui::Color32::from_rgb(97, 175, 239),     // #61afef
+            button_bg: egui::Color32::from_rgb(65, 70, 80), // #41464f - Lighter for better contrast
+            button_bg_hover: egui::Color32::from_rgb(75, 80, 90), // #4b505a - Even lighter on hover
+            button_text: egui::Color32::from_rgb(220, 223, 228), // #dcdfe4 - Bright button text
+            button_primary_bg: egui::Color32::from_rgb(97, 175, 239), // #61afef
             button_primary_bg_hover: egui::Color32::from_rgb(75, 155, 220), // #4b9bdc
-            button_primary_text: egui::Color32::WHITE,                    // Pure white for primary buttons
+            button_primary_text: egui::Color32::WHITE,      // Pure white for primary buttons
 
-            input_bg: egui::Color32::from_rgb(55, 59, 69),                // #373b45
-            input_border: egui::Color32::from_rgb(65, 69, 79),            // #41454f
-            input_text: egui::Color32::from_rgb(220, 223, 228),           // #dcdfe4 - Brighter input text
+            input_bg: egui::Color32::from_rgb(55, 59, 69), // #373b45
+            input_border: egui::Color32::from_rgb(65, 69, 79), // #41454f
+            input_text: egui::Color32::from_rgb(220, 223, 228), // #dcdfe4 - Brighter input text
         }
     }
 

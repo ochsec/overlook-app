@@ -35,6 +35,10 @@ pub struct OverlookApp {
     pub streaming_active: bool,
     pub stream_completed: bool, // True when API stream ends, but chars may still be displaying
     pub streaming_promise: Option<Promise<Result<String, String>>>,
+    pub streaming_result: Option<Result<String, String>>, // Store result when promise completes
+    pub streaming_chat_id: Option<String>, // Track chat that initiated the current stream
+    pub streaming_message_base_len: usize, // Message count before the assistant reply is revealed
+    pub streaming_message_persisted: bool, // True once the streamed reply is saved to disk
     pub token_receiver: Option<mpsc::Receiver<String>>,
     pub char_buffer: String, // Buffer for smooth character-by-character display
     pub char_display_index: usize, // Current position in character display
@@ -72,6 +76,10 @@ impl Default for OverlookApp {
             streaming_active: false,
             stream_completed: false,
             streaming_promise: None,
+            streaming_result: None,
+            streaming_chat_id: None,
+            streaming_message_base_len: 0,
+            streaming_message_persisted: false,
             token_receiver: None,
             char_buffer: String::new(),
             char_display_index: 0,
@@ -95,12 +103,17 @@ impl OverlookApp {
                 .map_err(|e| format!("Failed to create Raspberry Pi runtime: {}", e))
         } else {
             // Multi-threaded runtime for macOS, Windows, and other platforms
-            println!("🔧 Creating multi-threaded runtime for {}",
-                     if cfg!(target_os = "macos") { "macOS" }
-                     else if cfg!(target_os = "windows") { "Windows" }
-                     else { "other platforms" });
-            tokio::runtime::Runtime::new()
-                .map_err(|e| format!("Failed to create runtime: {}", e))
+            println!(
+                "🔧 Creating multi-threaded runtime for {}",
+                if cfg!(target_os = "macos") {
+                    "macOS"
+                } else if cfg!(target_os = "windows") {
+                    "Windows"
+                } else {
+                    "other platforms"
+                }
+            );
+            tokio::runtime::Runtime::new().map_err(|e| format!("Failed to create runtime: {}", e))
         }
     }
     pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
@@ -112,6 +125,9 @@ impl OverlookApp {
             streaming_message: String::new(),
             streaming_active: false,
             streaming_promise: None,
+            streaming_chat_id: None,
+            streaming_message_base_len: 0,
+            streaming_message_persisted: false,
             token_receiver: None,
             char_buffer: String::new(),
             char_display_index: 0,
@@ -141,11 +157,26 @@ impl OverlookApp {
     }
 
     pub fn save_data(&self) {
-        let _ = Storage::save_api_key(&self.api_key);
-        let _ = Storage::save_chats(&self.chats);
-        let _ = Storage::save_folders(&self.folders);
-        let _ = Storage::save_theme(&self.current_theme_type);
-        let _ = Storage::save_font_size(self.font_size);
+        if let Err(e) = Storage::save_api_key(&self.api_key) {
+            println!("❌ Failed to save API key: {}", e);
+        }
+        if let Err(e) = Storage::save_chats(&self.chats) {
+            println!("❌ Failed to save chats: {}", e);
+        } else {
+            println!(
+                "✅ Chats saved successfully. Total chats: {}",
+                self.chats.len()
+            );
+        }
+        if let Err(e) = Storage::save_folders(&self.folders) {
+            println!("❌ Failed to save folders: {}", e);
+        }
+        if let Err(e) = Storage::save_theme(&self.current_theme_type) {
+            println!("❌ Failed to save theme: {}", e);
+        }
+        if let Err(e) = Storage::save_font_size(self.font_size) {
+            println!("❌ Failed to save font size: {}", e);
+        }
     }
 
     pub fn create_new_chat(&mut self) {
@@ -175,7 +206,10 @@ impl OverlookApp {
         self.loading_models = true;
         let api_key = self.api_key.clone();
 
-        println!("Loading models with API key: {}...", &api_key[..std::cmp::min(8, api_key.len())]);
+        println!(
+            "Loading models with API key: {}...",
+            &api_key[..std::cmp::min(8, api_key.len())]
+        );
 
         if let Some(rt) = &self.rt {
             let api_client = ApiClient::new();
@@ -223,15 +257,24 @@ impl OverlookApp {
         }
 
         if self.sending_message || self.streaming_active {
-            println!("Prevented duplicate send: sending={}, streaming={}", self.sending_message, self.streaming_active);
+            println!(
+                "Prevented duplicate send: sending={}, streaming={}",
+                self.sending_message, self.streaming_active
+            );
             return; // Already sending a message or streaming
         }
 
-        println!("Starting new message send (streaming enabled: {}) on {}",
-                 self.streaming_enabled,
-                 if cfg!(target_os = "macos") { "macOS" }
-                 else if cfg!(all(target_arch = "aarch64", target_os = "linux")) { "Raspberry Pi" }
-                 else { "other platform" });
+        println!(
+            "Starting new message send (streaming enabled: {}) on {}",
+            self.streaming_enabled,
+            if cfg!(target_os = "macos") {
+                "macOS"
+            } else if cfg!(all(target_arch = "aarch64", target_os = "linux")) {
+                "Raspberry Pi"
+            } else {
+                "other platform"
+            }
+        );
 
         // Create chat if needed
         if self.current_chat_id.is_none() {
@@ -246,7 +289,7 @@ impl OverlookApp {
             match AttachmentProcessor::process_file(file_path) {
                 Ok(attachment) => {
                     attachments.push(attachment);
-                },
+                }
                 Err(e) => {
                     eprintln!("Error processing attachment {}: {}", file_path, e);
                     // Could show error to user in UI instead
@@ -269,7 +312,11 @@ impl OverlookApp {
             // Update title if it's the first message
             if chat.title == "New Chat" {
                 let title = user_message.content.chars().take(50).collect::<String>();
-                chat.title = if title.len() == 50 { format!("{}...", title) } else { title };
+                chat.title = if title.len() == 50 {
+                    format!("{}...", title)
+                } else {
+                    title
+                };
             }
         }
 
@@ -281,7 +328,9 @@ impl OverlookApp {
         // Start async API call
         let api_key = self.api_key.clone();
         let model = self.current_model.clone();
-        let messages: Vec<_> = self.chats[&chat_id].messages.iter()
+        let messages: Vec<_> = self.chats[&chat_id]
+            .messages
+            .iter()
             .map(|m| serde_json::json!({"role": m.role, "content": m.content}))
             .collect();
 
@@ -289,10 +338,14 @@ impl OverlookApp {
             // Use real-time streaming with character-level smoothing
             self.streaming_active = true;
             self.stream_completed = false;
+            self.streaming_result = None;
             self.streaming_message.clear();
             self.char_buffer.clear();
             self.char_display_index = 0;
             self.last_char_time = std::time::Instant::now();
+            self.streaming_chat_id = Some(chat_id.clone());
+            self.streaming_message_base_len = self.chats[&chat_id].messages.len();
+            self.streaming_message_persisted = false;
 
             // Create channel for real-time token communication
             let (token_sender, token_receiver) = mpsc::channel();
@@ -311,7 +364,10 @@ impl OverlookApp {
                     use futures_util::StreamExt;
 
                     let api_client = ApiClient::new();
-                    match api_client.stream_chat_completion(&api_key, &model, messages).await {
+                    match api_client
+                        .stream_chat_completion(&api_key, &model, messages)
+                        .await
+                    {
                         Ok(stream) => {
                             let mut full_response = String::new();
                             let mut pinned_stream = Box::pin(stream);
@@ -320,9 +376,6 @@ impl OverlookApp {
                                 match token_result {
                                     Ok(token) => {
                                         full_response.push_str(&token);
-
-                                        // Debug: Show token details
-                                        println!("🔧 Token received: {:?} (length: {})", token, token.len());
 
                                         // Send token to UI immediately for real-time display
                                         if token_sender.send(token).is_err() {
@@ -347,6 +400,9 @@ impl OverlookApp {
         } else {
             // Use traditional non-streaming
             self.sending_message = true;
+            self.streaming_chat_id = None;
+            self.streaming_message_base_len = 0;
+            self.streaming_message_persisted = false;
 
             let promise = Promise::spawn_thread("api_call", move || {
                 let rt = match Self::create_optimized_runtime() {
@@ -359,7 +415,10 @@ impl OverlookApp {
 
                 rt.block_on(async move {
                     let api_client = ApiClient::new();
-                    match api_client.send_chat_message(&api_key, &model, messages).await {
+                    match api_client
+                        .send_chat_message(&api_key, &model, messages)
+                        .await
+                    {
                         Ok(response) => Ok(response),
                         Err(e) => Err(format!("API request failed: {}", e)),
                     }
@@ -394,7 +453,6 @@ impl OverlookApp {
 
             // 1. Collect new tokens into buffer
             while let Ok(token) = receiver.try_recv() {
-                println!("🔧 Token buffered: {:?} (length: {})", token, token.len());
                 self.char_buffer.push_str(&token);
                 received_new_tokens = true;
             }
@@ -403,17 +461,14 @@ impl OverlookApp {
             let now = std::time::Instant::now();
             let char_interval = std::time::Duration::from_millis(15); // ~67 chars/sec for smooth effect
 
-            if now.duration_since(self.last_char_time) >= char_interval &&
-               self.char_display_index < self.char_buffer.len() {
-
+            if now.duration_since(self.last_char_time) >= char_interval
+                && self.char_display_index < self.char_buffer.len()
+            {
                 // Add next character to display
                 if let Some(next_char) = self.char_buffer.chars().nth(self.char_display_index) {
                     self.streaming_message.push(next_char);
                     self.char_display_index += 1;
                     self.last_char_time = now;
-
-                    println!("🎮 Character displayed: {:?} (progress: {}/{})",
-                             next_char, self.char_display_index, self.char_buffer.len());
 
                     ctx.request_repaint();
                 }
@@ -431,88 +486,119 @@ impl OverlookApp {
         }
     }
 
+    fn persist_streaming_result(&mut self, result: &Result<String, String>) {
+        if self.streaming_message_persisted {
+            return; // Already saved
+        }
+
+        let target_chat_id = self
+            .streaming_chat_id
+            .clone()
+            .or_else(|| self.current_chat_id.clone());
+
+        let Some(chat_id) = target_chat_id else {
+            eprintln!("Streaming completed but no chat ID was available to store the response.");
+            return;
+        };
+
+        let final_content = match result {
+            Ok(full_response) => {
+                let content = if !self.char_buffer.is_empty() {
+                    self.char_buffer.clone()
+                } else if !self.streaming_message.is_empty() {
+                    self.streaming_message.clone()
+                } else {
+                    full_response.clone()
+                };
+
+                content
+            }
+            Err(e) => {
+                eprintln!("Streaming error: {}", e);
+
+                let error_content = if e.contains("Rate limit exceeded") {
+                    "Rate limit exceeded. Please wait a few minutes before trying again, or try a different model.".to_string()
+                } else if e.contains("API Error 429") {
+                    "Too many requests. Please wait before sending another message.".to_string()
+                } else {
+                    format!("Streaming error: {}", e)
+                };
+
+                error_content
+            }
+        };
+
+        let persisted = if let Some(chat) = self.chats.get_mut(&chat_id) {
+            let target_index = self.streaming_message_base_len;
+            let message = Message {
+                role: "assistant".to_string(),
+                content: final_content.clone(),
+                timestamp: Utc::now(),
+                attachments: Vec::new(),
+            };
+
+            let stored = if chat.messages.len() == target_index {
+                chat.messages.push(message);
+                true
+            } else if chat.messages.len() > target_index {
+                chat.messages[target_index] = message;
+                true
+            } else {
+                // Unexpected state; append to avoid data loss
+                chat.messages.push(message);
+                true
+            };
+
+            if stored {
+                chat.updated_at = Utc::now();
+                chat.model = self.current_model.clone();
+            }
+
+            stored
+        } else {
+            eprintln!("Failed to find chat with ID: {}", chat_id);
+            return;
+        };
+
+        if persisted {
+            self.save_data();
+            self.streaming_message_persisted = true;
+        }
+    }
+
     pub fn handle_streaming_response(&mut self) {
+        // First, check if we got a new result from the promise
         if let Some(promise) = &self.streaming_promise {
             if let Some(result) = promise.ready() {
-                // Mark stream as completed (stops streaming animation)
+                self.streaming_result = Some(result.clone());
                 self.stream_completed = true;
-
-                // Check if we're still displaying characters from the buffer
-                let still_displaying = self.char_display_index < self.char_buffer.len();
-
-                if still_displaying {
-                    // Stream is complete but we're still displaying characters
-                    // Wait until all characters are displayed before finalizing
-                    return;
-                }
-
-                self.streaming_active = false;
-                self.token_receiver = None; // Clean up the token receiver
-
-                if let Some(current_chat_id) = &self.current_chat_id {
-                    match result {
-                        Ok(full_response) => {
-                            println!("✅ Streaming completed successfully. Response length: {} characters", full_response.len());
-
-                            // Use the complete buffer content for the final message
-                            // This ensures we get the full response even if character display is still catching up
-                            let final_content = if !self.char_buffer.is_empty() {
-                                self.char_buffer.clone()
-                            } else if !self.streaming_message.is_empty() {
-                                self.streaming_message.clone()
-                            } else {
-                                // Fallback to full_response
-                                full_response.clone()
-                            };
-
-                            let assistant_message = Message {
-                                role: "assistant".to_string(),
-                                content: final_content,
-                                timestamp: Utc::now(),
-                                attachments: Vec::new(),
-                            };
-
-                            if let Some(chat) = self.chats.get_mut(current_chat_id) {
-                                chat.messages.push(assistant_message);
-                                chat.updated_at = Utc::now();
-                                chat.model = self.current_model.clone();
-                            }
-                        }
-                        Err(e) => {
-                            println!("Streaming error: {}", e);
-
-                            // Check if this is a rate limit error and provide better feedback
-                            let error_content = if e.contains("Rate limit exceeded") {
-                                "Rate limit exceeded. Please wait a few minutes before trying again, or try a different model.".to_string()
-                            } else if e.contains("API Error 429") {
-                                "Too many requests. Please wait before sending another message.".to_string()
-                            } else {
-                                format!("Streaming error: {}", e)
-                            };
-
-                            let error_message = Message {
-                                role: "assistant".to_string(),
-                                content: error_content,
-                                timestamp: Utc::now(),
-                                attachments: Vec::new(),
-                            };
-
-                            if let Some(chat) = self.chats.get_mut(current_chat_id) {
-                                chat.messages.push(error_message);
-                            }
-                        }
-                    }
-
-                    // Clean up streaming state
-                    self.streaming_message.clear();
-                    self.char_buffer.clear();
-                    self.char_display_index = 0;
-                    self.stream_completed = false;
-                    self.save_data();
-                }
-
-                self.streaming_promise = None;
             }
+        }
+
+        // Then, handle the stored result if we have one
+        if let Some(result_clone) = self.streaming_result.clone() {
+            if !self.streaming_message_persisted {
+                self.persist_streaming_result(&result_clone);
+            }
+
+            let total_chars = self.char_buffer.chars().count();
+            let still_displaying = self.char_display_index < total_chars;
+
+            if still_displaying {
+                return;
+            }
+
+            self.streaming_active = false;
+            self.token_receiver = None; // Clean up the token receiver
+            self.streaming_message.clear();
+            self.char_buffer.clear();
+            self.char_display_index = 0;
+            self.stream_completed = false;
+            self.streaming_result = None;
+            self.streaming_chat_id = None;
+            self.streaming_message_base_len = 0;
+            self.streaming_message_persisted = false;
+            self.streaming_promise = None;
         }
     }
 
@@ -567,7 +653,8 @@ impl OverlookApp {
 
             // Apply new theme to egui style
             ctx.style_mut(|style| {
-                self.current_theme.apply_to_egui_style(style, self.font_size);
+                self.current_theme
+                    .apply_to_egui_style(style, self.font_size);
             });
 
             // Save the theme preference
@@ -584,15 +671,24 @@ impl OverlookApp {
                     .add_filter("Images", &["png", "jpg", "jpeg", "gif", "webp", "bmp"])
                     .add_filter("PDFs", &["pdf"])
                     .add_filter("Text files", &["txt", "md", "json", "xml", "csv", "log"])
-                    .add_filter("All supported", &["png", "jpg", "jpeg", "gif", "webp", "bmp", "pdf", "txt", "md", "json", "xml", "csv", "log"])
+                    .add_filter(
+                        "All supported",
+                        &[
+                            "png", "jpg", "jpeg", "gif", "webp", "bmp", "pdf", "txt", "md", "json",
+                            "xml", "csv", "log",
+                        ],
+                    )
                     .pick_files()
                     .await;
 
                 // Convert to file paths
                 files.map(|files| {
-                    files.into_iter()
+                    files
+                        .into_iter()
                         .map(|file| file.path().to_string_lossy().to_string())
-                        .filter(|path| crate::attachments::AttachmentProcessor::is_supported_file(path))
+                        .filter(|path| {
+                            crate::attachments::AttachmentProcessor::is_supported_file(path)
+                        })
                         .collect::<Vec<String>>()
                 })
             })

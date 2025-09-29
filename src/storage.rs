@@ -1,5 +1,5 @@
-use crate::types::{ChatMap, FolderMap};
 use crate::theme::ThemeType;
+use crate::types::{ChatMap, FolderMap};
 use anyhow::Result;
 
 pub struct Storage;

@@ -9,7 +9,8 @@ pub struct AttachmentProcessor;
 impl AttachmentProcessor {
     pub fn process_file(file_path: &str) -> Result<Attachment> {
         let path = Path::new(file_path);
-        let file_name = path.file_name()
+        let file_name = path
+            .file_name()
             .and_then(|name| name.to_str())
             .unwrap_or("unknown")
             .to_string();
@@ -23,19 +24,25 @@ impl AttachmentProcessor {
             mime if mime.starts_with("image/") => {
                 let image_data = fs::read(file_path)?;
                 let base64_data = base64::prelude::BASE64_STANDARD.encode(image_data);
-                AttachmentData::Image { base64: base64_data }
+                AttachmentData::Image {
+                    base64: base64_data,
+                }
             }
 
             // PDF files - extract text
             "application/pdf" => {
                 let text_content = Self::extract_pdf_text(file_path)?;
-                AttachmentData::Text { content: text_content }
+                AttachmentData::Text {
+                    content: text_content,
+                }
             }
 
             // Text files
             mime if mime.starts_with("text/") => {
                 let text_content = fs::read_to_string(file_path)?;
-                AttachmentData::Text { content: text_content }
+                AttachmentData::Text {
+                    content: text_content,
+                }
             }
 
             _ => {
@@ -71,11 +78,9 @@ impl AttachmentProcessor {
     pub fn get_supported_extensions() -> Vec<&'static str> {
         vec![
             // Images
-            "png", "jpg", "jpeg", "gif", "webp", "bmp",
-            // PDFs
-            "pdf",
-            // Text files
-            "txt", "md", "json", "xml", "csv", "log"
+            "png", "jpg", "jpeg", "gif", "webp", "bmp", // PDFs
+            "pdf", // Text files
+            "txt", "md", "json", "xml", "csv", "log",
         ]
     }
 

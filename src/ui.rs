@@ -27,32 +27,35 @@ impl eframe::App for OverlookApp {
 
 impl OverlookApp {
     fn render_sidebar(&mut self, ctx: &egui::Context) {
-        egui::SidePanel::left("sidebar").resizable(true).min_width(300.0).show(ctx, |ui| {
-            ui.vertical(|ui| {
-                ui.heading("OpenRouter Chat");
-                ui.separator();
+        egui::SidePanel::left("sidebar")
+            .resizable(true)
+            .min_width(300.0)
+            .show(ctx, |ui| {
+                ui.vertical(|ui| {
+                    ui.heading("OpenRouter Chat");
+                    ui.separator();
 
-                // API Key input
-                ui.label("API Key:");
-                let response = ui.text_edit_singleline(&mut self.api_key);
-                if response.changed() {
-                    self.save_data();
-                    self.load_models();
-                }
+                    // API Key input
+                    ui.label("API Key:");
+                    let response = ui.text_edit_singleline(&mut self.api_key);
+                    if response.changed() {
+                        self.save_data();
+                        self.load_models();
+                    }
 
-                ui.separator();
+                    ui.separator();
 
-                // New Chat button
-                if ui.button("+ New Chat").clicked() {
-                    self.create_new_chat();
-                }
+                    // New Chat button
+                    if ui.button("+ New Chat").clicked() {
+                        self.create_new_chat();
+                    }
 
-                ui.separator();
+                    ui.separator();
 
-                // Chats list
-                self.render_chats_list(ui);
+                    // Chats list
+                    self.render_chats_list(ui);
+                });
             });
-        });
     }
 
     fn render_chats_list(&mut self, ui: &mut egui::Ui) {
@@ -67,12 +70,11 @@ impl OverlookApp {
                 let is_selected = self.current_chat_id.as_ref() == Some(&chat.id);
 
                 ui.horizontal(|ui| {
-                    let button = egui::Button::new(&chat.title)
-                        .fill(if is_selected {
-                            self.current_theme.accent
-                        } else {
-                            egui::Color32::TRANSPARENT
-                        });
+                    let button = egui::Button::new(&chat.title).fill(if is_selected {
+                        self.current_theme.accent
+                    } else {
+                        egui::Color32::TRANSPARENT
+                    });
 
                     if ui.add_sized([200.0, 30.0], button).clicked() {
                         chat_to_select = Some(chat.id.clone());
@@ -163,7 +165,11 @@ impl OverlookApp {
                     .selected_text(self.current_theme_type.name())
                     .show_ui(ui, |ui| {
                         for theme_type in ThemeType::all_themes() {
-                            ui.selectable_value(&mut self.current_theme_type, theme_type, theme_type.name());
+                            ui.selectable_value(
+                                &mut self.current_theme_type,
+                                theme_type,
+                                theme_type.name(),
+                            );
                         }
                     });
 
@@ -183,7 +189,10 @@ impl OverlookApp {
 
                 if theme_changed || font_changed {
                     if theme_changed {
-                        println!("Theme changed from {:?} to {:?}", before_theme, self.current_theme_type);
+                        println!(
+                            "Theme changed from {:?} to {:?}",
+                            before_theme, self.current_theme_type
+                        );
                         self.current_theme = Theme::from_theme_type(&self.current_theme_type);
                     }
                     if font_changed {
@@ -193,7 +202,8 @@ impl OverlookApp {
                     // Force complete style refresh by setting to default first, then applying theme
                     ui.ctx().set_style(egui::Style::default());
                     ui.ctx().style_mut(|style| {
-                        self.current_theme.apply_to_egui_style(style, self.font_size);
+                        self.current_theme
+                            .apply_to_egui_style(style, self.font_size);
                     });
 
                     self.save_data();
@@ -214,11 +224,25 @@ impl OverlookApp {
             .show(ui, |ui| {
                 if let Some(chat_id) = &self.current_chat_id {
                     if let Some(chat) = self.chats.get(chat_id) {
-                        for message in &chat.messages {
+                        let hide_streaming_assistant = self.streaming_active
+                            && self.streaming_message_persisted
+                            && self
+                                .streaming_chat_id
+                                .as_ref()
+                                .map(|id| id == chat_id)
+                                .unwrap_or(false);
+
+                        let visible_count = if hide_streaming_assistant {
+                            std::cmp::min(self.streaming_message_base_len, chat.messages.len())
+                        } else {
+                            chat.messages.len()
+                        };
+
+                        for message in chat.messages.iter().take(visible_count) {
                             self.render_message(ui, message);
                         }
 
-                        // Show streaming message if active
+                        // Show streaming message during both active streaming and character display phases
                         if self.streaming_active && !self.streaming_message.is_empty() {
                             self.render_streaming_message(ui);
                         }
@@ -227,16 +251,20 @@ impl OverlookApp {
                         if self.streaming_active && !self.stream_completed {
                             ui.horizontal(|ui| {
                                 ui.add_space(20.0);
-                                ui.label(egui::RichText::new("🔄 AI is streaming...")
-                                    .color(egui::Color32::GRAY)
-                                    .italics());
+                                ui.label(
+                                    egui::RichText::new("🔄 AI is streaming...")
+                                        .color(egui::Color32::GRAY)
+                                        .italics(),
+                                );
                             });
                         } else if self.sending_message {
                             ui.horizontal(|ui| {
                                 ui.add_space(20.0);
-                                ui.label(egui::RichText::new("AI is typing...")
-                                    .color(egui::Color32::GRAY)
-                                    .italics());
+                                ui.label(
+                                    egui::RichText::new("AI is typing...")
+                                        .color(egui::Color32::GRAY)
+                                        .italics(),
+                                );
                             });
                         }
                     }
@@ -245,7 +273,9 @@ impl OverlookApp {
                         ui.add_space(100.0);
                         ui.heading("Welcome to Overlook Chat");
                         ui.add_space(10.0);
-                        ui.label("Select a model and start chatting, or create a new conversation.");
+                        ui.label(
+                            "Select a model and start chatting, or create a new conversation.",
+                        );
                     });
                 }
             });
@@ -275,12 +305,8 @@ impl OverlookApp {
                     [ui.available_width() * 0.7, 0.0].into(),
                     egui::Layout::top_down(egui::Align::LEFT),
                     |ui| {
-                        ui.add(
-                            egui::Label::new(job)
-                                .wrap()
-                                .selectable(true)
-                        );
-                    }
+                        ui.add(egui::Label::new(job).wrap().selectable(true));
+                    },
                 );
             });
         } else {
@@ -304,12 +330,8 @@ impl OverlookApp {
                     [ui.available_width() * 0.8, 0.0].into(),
                     egui::Layout::top_down(egui::Align::LEFT),
                     |ui| {
-                        ui.add(
-                            egui::Label::new(job)
-                                .wrap()
-                                .selectable(true)
-                        );
-                    }
+                        ui.add(egui::Label::new(job).wrap().selectable(true));
+                    },
                 );
             });
         }
@@ -345,7 +367,10 @@ impl OverlookApp {
                         egui::TextFormat {
                             color: self.current_theme.assistant_message_text,
                             background: self.current_theme.assistant_message_bg,
-                            font_id: egui::FontId::new(self.font_size, egui::FontFamily::Proportional),
+                            font_id: egui::FontId::new(
+                                self.font_size,
+                                egui::FontFamily::Proportional,
+                            ),
                             ..Default::default()
                         },
                     );
@@ -356,12 +381,8 @@ impl OverlookApp {
                 [ui.available_width() * 0.8, 0.0].into(),
                 egui::Layout::top_down(egui::Align::LEFT),
                 |ui| {
-                    ui.add(
-                        egui::Label::new(job)
-                            .wrap()
-                            .selectable(true)
-                    );
-                }
+                    ui.add(egui::Label::new(job).wrap().selectable(true));
+                },
             );
         });
         ui.add_space(8.0);
@@ -408,14 +429,18 @@ impl OverlookApp {
                 let text_edit_response = ui.add_sized(
                     [ui.available_width() - 80.0, 60.0], // Make input much taller
                     egui::TextEdit::multiline(&mut self.message_input)
-                        .hint_text("Type your message here... (Shift+Enter for new line, Enter to send)")
-                        .desired_rows(3)
+                        .hint_text(
+                            "Type your message here... (Shift+Enter for new line, Enter to send)",
+                        )
+                        .desired_rows(3),
                 );
 
                 // Handle Enter key to send (but not Shift+Enter)
-                if text_edit_response.has_focus() && ui.input(|i| {
-                    i.key_pressed(egui::Key::Enter) && !i.modifiers.shift
-                }) && !self.sending_message && (!self.streaming_active || self.stream_completed) {
+                if text_edit_response.has_focus()
+                    && ui.input(|i| i.key_pressed(egui::Key::Enter) && !i.modifiers.shift)
+                    && !self.sending_message
+                    && (!self.streaming_active || self.stream_completed)
+                {
                     self.send_message(ctx);
                 }
 
@@ -430,12 +455,12 @@ impl OverlookApp {
                         "Send"
                     };
 
-                    let send_btn = ui.add_sized(
-                        [70.0, 30.0],
-                        egui::Button::new(button_text)
-                    );
+                    let send_btn = ui.add_sized([70.0, 30.0], egui::Button::new(button_text));
 
-                    if send_btn.clicked() && !self.sending_message && (!self.streaming_active || self.stream_completed) {
+                    if send_btn.clicked()
+                        && !self.sending_message
+                        && (!self.streaming_active || self.stream_completed)
+                    {
                         self.send_message(ctx);
                     }
                 });

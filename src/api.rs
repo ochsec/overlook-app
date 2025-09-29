@@ -22,7 +22,8 @@ impl ApiClient {
     }
 
     pub async fn load_models(&self, api_key: &str) -> Result<Vec<OpenRouterModel>> {
-        let response = self.client
+        let response = self
+            .client
             .get("https://openrouter.ai/api/v1/models")
             .header("Authorization", format!("Bearer {}", api_key))
             .header("HTTP-Referer", "https://github.com/your-username/overlook")
@@ -32,7 +33,10 @@ impl ApiClient {
 
         let status = response.status();
         if !status.is_success() {
-            let error_text = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
+            let error_text = response
+                .text()
+                .await
+                .unwrap_or_else(|_| "Unknown error".to_string());
             return Err(anyhow::anyhow!("API Error {}: {}", status, error_text));
         }
 
@@ -52,7 +56,8 @@ impl ApiClient {
             "temperature": 0.7
         });
 
-        let response = self.client
+        let response = self
+            .client
             .post("https://openrouter.ai/api/v1/chat/completions")
             .header("Authorization", format!("Bearer {}", api_key))
             .header("Content-Type", "application/json")
@@ -88,7 +93,8 @@ impl ApiClient {
             "stream": true
         });
 
-        let response = self.client
+        let response = self
+            .client
             .post("https://openrouter.ai/api/v1/chat/completions")
             .header("Authorization", format!("Bearer {}", api_key))
             .header("Content-Type", "application/json")
@@ -100,10 +106,16 @@ impl ApiClient {
 
         if !response.status().is_success() {
             let status = response.status();
-            let error_text = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
+            let error_text = response
+                .text()
+                .await
+                .unwrap_or_else(|_| "Unknown error".to_string());
 
             if status == 429 {
-                return Err(anyhow::anyhow!("Rate limit exceeded. Please wait before trying again. Details: {}", error_text));
+                return Err(anyhow::anyhow!(
+                    "Rate limit exceeded. Please wait before trying again. Details: {}",
+                    error_text
+                ));
             }
 
             return Err(anyhow::anyhow!("API Error {}: {}", status, error_text));
@@ -140,7 +152,10 @@ impl ApiClient {
                                 None // No content in this chunk
                             }
                             Err(e) => {
-                                eprintln!("Failed to parse SSE JSON: {} for data: {}", e, event.data);
+                                eprintln!(
+                                    "Failed to parse SSE JSON: {} for data: {}",
+                                    e, event.data
+                                );
                                 None // Skip malformed chunks
                             }
                         }
