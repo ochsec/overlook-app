@@ -95,9 +95,9 @@ impl OverlookApp {
         // Use single-threaded runtime only for Linux ARM64 (Raspberry Pi)
         // Keep multi-threaded for macOS (even on Apple Silicon) and other platforms
         if cfg!(all(target_arch = "aarch64", target_os = "linux")) {
-            // Single-threaded runtime for Raspberry Pi - much more efficient
-            println!("🔧 Creating single-threaded runtime for Raspberry Pi (ARM64 Linux)");
-            tokio::runtime::Builder::new_current_thread()
+            // Runtime tuned for Raspberry Pi - small pool works better than fully single threaded
+            tokio::runtime::Builder::new_multi_thread()
+                .worker_threads(2)
                 .enable_all()
                 .build()
                 .map_err(|e| format!("Failed to create Raspberry Pi runtime: {}", e))
