@@ -1,6 +1,7 @@
 use crate::app::OverlookApp;
 use crate::theme::{Theme, ThemeType};
-use eframe::egui;
+use crate::types::ProviderKind;
+use eframe::egui::{self, ViewportBuilder, ViewportClass, ViewportCommand, ViewportId};
 
 impl eframe::App for OverlookApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
@@ -16,6 +17,8 @@ impl eframe::App for OverlookApp {
         // Check for completed file picker
         self.handle_file_picker_response();
 
+        self.render_menu_bar(ctx);
+        self.render_api_settings_window(ctx);
         self.render_sidebar(ctx);
         self.render_main_content(ctx);
         self.render_modals(ctx);
@@ -26,6 +29,157 @@ impl eframe::App for OverlookApp {
 }
 
 impl OverlookApp {
+    fn render_menu_bar(&mut self, ctx: &egui::Context) {
+        egui::TopBottomPanel::top("menu_bar").show(ctx, |ui| {
+            egui::menu::bar(ui, |ui| {
+                ui.menu_button("Settings", |ui| {
+                    if ui.button("API Keys…").clicked() {
+                        self.show_api_settings_window = true;
+                        ui.close_menu();
+                    }
+                });
+            });
+        });
+    }
+
+    fn render_api_settings_window(&mut self, ctx: &egui::Context) {
+        let viewport_id = ViewportId::from_hash_of("api_settings_window");
+
+        if !self.show_api_settings_window {
+            ctx.send_viewport_cmd_to(viewport_id, ViewportCommand::Close);
+            return;
+        }
+
+        let builder = ViewportBuilder::default()
+            .with_title("API Keys")
+            .with_inner_size([420.0, 240.0])
+            .with_min_inner_size([360.0, 200.0]);
+
+        ctx.show_viewport_immediate(viewport_id, builder, |api_ctx, class| match class {
+            ViewportClass::Immediate | ViewportClass::Deferred | ViewportClass::Root => {
+                self.render_api_settings_panel(api_ctx);
+
+                if api_ctx.input(|i| i.viewport().close_requested()) {
+                    self.show_api_settings_window = false;
+                }
+            }
+            ViewportClass::Embedded => {
+                let mut open = true;
+                let mut should_close = false;
+
+                egui::Window::new("API Keys")
+                    .open(&mut open)
+                    .resizable(false)
+                    .collapsible(false)
+                    .show(api_ctx, |ui| {
+                        should_close = self.render_api_settings_ui(ui);
+                    });
+
+                if api_ctx.input(|i| i.viewport().close_requested()) || !open || should_close {
+                    self.show_api_settings_window = false;
+                }
+            }
+        });
+    }
+
+    fn render_api_settings_panel(&mut self, ctx: &egui::Context) {
+        let mut should_close = false;
+
+        egui::CentralPanel::default().show(ctx, |ui| {
+            should_close = self.render_api_settings_ui(ui);
+        });
+
+        if should_close {
+            self.show_api_settings_window = false;
+            ctx.send_viewport_cmd(ViewportCommand::Close);
+        }
+    }
+
+    fn render_api_settings_ui(&mut self, ui: &mut egui::Ui) -> bool {
+        let mut should_close = false;
+
+        ui.heading("Provider API Keys");
+        ui.add_space(6.0);
+        ui.label("Keys are stored locally on this device.");
+        ui.add_space(12.0);
+
+        self.render_api_key_section(
+            ui,
+            ProviderKind::OpenRouter,
+            "OpenRouter",
+            "Enter OpenRouter API key",
+        );
+
+        ui.add_space(12.0);
+
+        self.render_api_key_section(ui, ProviderKind::OpenAI, "OpenAI", "Enter OpenAI API key");
+
+        ui.add_space(12.0);
+
+        self.render_api_key_section(
+            ui,
+            ProviderKind::Anthropic,
+            "Anthropic",
+            "Enter Anthropic API key",
+        );
+
+        ui.add_space(12.0);
+        ui.label("Updates sync immediately once you edit a key.");
+        ui.add_space(18.0);
+
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            if ui.button("Close").clicked() {
+                should_close = true;
+            }
+        });
+
+        should_close
+    }
+
+    fn render_api_key_section(
+        &mut self,
+        ui: &mut egui::Ui,
+        provider: ProviderKind,
+        label: &str,
+        hint: &str,
+    ) {
+        ui.group(|ui| {
+            ui.vertical(|ui| {
+                ui.label(label);
+                ui.add_space(4.0);
+                ui.horizontal(|ui| {
+                    let key_ref = self.api_keys.get_mut(provider);
+                    let response = ui.add(
+                        egui::TextEdit::singleline(key_ref)
+                            .hint_text(hint)
+                            .desired_width(f32::INFINITY)
+                            .password(self.api_key_masked),
+                    );
+
+                    let toggle_label = if self.api_key_masked { "Show" } else { "Hide" };
+                    if ui.button(toggle_label).clicked() {
+                        self.api_key_masked = !self.api_key_masked;
+                    }
+
+                    if response.changed() {
+                        self.handle_api_key_change(provider);
+                    }
+                });
+            });
+        });
+    }
+
+    fn handle_api_key_change(&mut self, provider: ProviderKind) {
+        let trimmed = self.api_keys.get(provider).trim().to_string();
+        *self.api_keys.get_mut(provider) = trimmed;
+
+        self.save_data();
+
+        if provider == self.current_provider {
+            self.load_models();
+        }
+    }
+
     fn render_sidebar(&mut self, ctx: &egui::Context) {
         egui::SidePanel::left("sidebar")
             .resizable(true)
@@ -35,14 +189,7 @@ impl OverlookApp {
                     ui.heading("OpenRouter Chat");
                     ui.separator();
 
-                    // API Key input
-                    ui.label("API Key:");
-                    let response = ui.text_edit_singleline(&mut self.api_key);
-                    if response.changed() {
-                        self.save_data();
-                        self.load_models();
-                    }
-
+                    ui.label("Configure provider API keys from Settings → API Keys…");
                     ui.separator();
 
                     // New Chat button
@@ -89,8 +236,13 @@ impl OverlookApp {
             // Handle actions outside the loop
             if let Some(chat_id) = chat_to_select {
                 self.current_chat_id = Some(chat_id.clone());
-                if let Some(current_chat) = self.chats.get(&chat_id) {
-                    self.current_model = current_chat.model.clone();
+                if let Some((provider, model)) = self
+                    .chats
+                    .get(&chat_id)
+                    .map(|chat| (chat.provider, chat.model.clone()))
+                {
+                    self.set_current_provider(provider);
+                    self.current_model = model;
                 }
             }
 
@@ -114,37 +266,75 @@ impl OverlookApp {
 
     fn render_header(&mut self, ui: &mut egui::Ui) {
         ui.horizontal(|ui| {
-            ui.label("Model:");
+            ui.label("Provider:");
 
-            let combo_text = if self.loading_models {
-                "Loading models..."
-            } else if self.available_models.is_empty() {
-                if self.api_key.is_empty() {
-                    "Enter API key first"
-                } else {
-                    "No models loaded"
-                }
-            } else if self.current_model.is_empty() {
-                "Select a model..."
-            } else {
-                // Find the model name for display
-                self.available_models
-                    .iter()
-                    .find(|m| m.id == self.current_model)
-                    .map(|m| m.name.as_str())
-                    .unwrap_or(&self.current_model)
-            };
-
-            egui::ComboBox::from_id_source("model_selector")
-                .selected_text(combo_text)
+            let mut selected_provider = self.current_provider;
+            egui::ComboBox::from_id_source("provider_selector")
+                .selected_text(self.current_provider.display_name())
                 .show_ui(ui, |ui| {
-                    for model in &self.available_models {
-                        ui.selectable_value(&mut self.current_model, model.id.clone(), &model.name);
+                    for provider in ProviderKind::all() {
+                        ui.selectable_value(
+                            &mut selected_provider,
+                            provider,
+                            provider.display_name(),
+                        );
                     }
                 });
 
-            // Refresh models button
-            if ui.small_button("🔄").clicked() && !self.loading_models {
+            if selected_provider != self.current_provider {
+                self.set_current_provider(selected_provider);
+            }
+
+            ui.add_space(12.0);
+            ui.label("Model:");
+
+            let provider_has_key = !self.api_keys.get(self.current_provider).trim().is_empty();
+
+            let combo_label = if self.loading_models {
+                "Loading models...".to_string()
+            } else if !provider_has_key {
+                "Enter API key first".to_string()
+            } else if self.available_models.is_empty() {
+                "No models loaded".to_string()
+            } else if self.current_model.is_empty() {
+                "Select a model...".to_string()
+            } else {
+                self.available_models
+                    .iter()
+                    .find(|m| m.id == self.current_model)
+                    .map(|m| m.name.clone())
+                    .unwrap_or_else(|| self.current_model.clone())
+            };
+
+            ui.add_enabled_ui(provider_has_key, |ui| {
+                egui::ComboBox::from_id_source("model_selector")
+                    .selected_text(combo_label.clone())
+                    .show_ui(ui, |ui| {
+                        for model in &self.available_models {
+                            ui.selectable_value(
+                                &mut self.current_model,
+                                model.id.clone(),
+                                &model.name,
+                            );
+                        }
+                    });
+            });
+
+            if !provider_has_key {
+                ui.label(
+                    egui::RichText::new("← add a key")
+                        .italics()
+                        .color(egui::Color32::GRAY),
+                );
+            }
+
+            if ui
+                .add_enabled(
+                    !self.loading_models && provider_has_key,
+                    egui::Button::new("🔄"),
+                )
+                .clicked()
+            {
                 self.load_models();
             }
 

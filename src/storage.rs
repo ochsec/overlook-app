@@ -1,5 +1,5 @@
 use crate::theme::ThemeType;
-use crate::types::{ChatMap, FolderMap};
+use crate::types::{ChatMap, FolderMap, ProviderKeys};
 use anyhow::{anyhow, Context, Result};
 use base64::prelude::BASE64_STANDARD;
 use base64::Engine;
@@ -12,6 +12,7 @@ use zeroize::{Zeroize, Zeroizing};
 const SERVICE_NAME: &str = "overlook";
 const MASTER_KEY_ACCOUNT: &str = "master-key";
 const CHAT_FILE_NAME: &str = "chats.enc";
+const API_KEYS_FILE_NAME: &str = "api_keys.json";
 const VERSION_BYTE: u8 = 1;
 const AAD: &[u8] = b"overlook-v1";
 const MASTER_KEY_LEN: usize = 32;
@@ -19,21 +20,33 @@ const MASTER_KEY_LEN: usize = 32;
 pub struct Storage;
 
 impl Storage {
-    pub fn load_api_key() -> Result<String> {
+    pub fn load_api_keys() -> Result<ProviderKeys> {
         if let Some(data_dir) = dirs::config_dir() {
             let app_dir = data_dir.join("overlook");
+            let json_path = app_dir.join(API_KEYS_FILE_NAME);
+
+            if let Ok(keys_json) = std::fs::read_to_string(&json_path) {
+                if let Ok(keys) = serde_json::from_str::<ProviderKeys>(&keys_json) {
+                    return Ok(keys);
+                }
+            }
+
+            // Fallback to legacy single key storage
             if let Ok(key) = std::fs::read_to_string(app_dir.join("api_key.txt")) {
-                return Ok(key.trim().to_string());
+                let mut keys = ProviderKeys::default();
+                keys.openrouter = key.trim().to_string();
+                return Ok(keys);
             }
         }
-        Ok(String::new())
+        Ok(ProviderKeys::default())
     }
 
-    pub fn save_api_key(api_key: &str) -> Result<()> {
+    pub fn save_api_keys(keys: &ProviderKeys) -> Result<()> {
         if let Some(data_dir) = dirs::config_dir() {
             let app_dir = data_dir.join("overlook");
             std::fs::create_dir_all(&app_dir)?;
-            std::fs::write(app_dir.join("api_key.txt"), api_key)?;
+            let data = serde_json::to_string_pretty(keys)?;
+            std::fs::write(app_dir.join(API_KEYS_FILE_NAME), data)?;
         }
         Ok(())
     }

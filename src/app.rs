@@ -3,26 +3,31 @@ use crate::attachments::AttachmentProcessor;
 use crate::export::Exporter;
 use crate::storage::Storage;
 use crate::theme::{Theme, ThemeType};
-use crate::types::{Chat, ChatMap, FolderMap, Message, OpenRouterModel};
+use crate::types::{
+    Chat, ChatMap, FolderMap, Message, ModelDescriptor, ProviderKeys, ProviderKind,
+};
 use chrono::Utc;
 use eframe::egui;
 use poll_promise::Promise;
 use std::sync::mpsc;
 
 pub struct OverlookApp {
-    pub api_key: String,
+    pub api_keys: ProviderKeys,
     pub current_chat_id: Option<String>,
+    pub current_provider: ProviderKind,
     pub current_model: String,
     pub message_input: String,
     pub chats: ChatMap,
     pub folders: FolderMap,
-    pub available_models: Vec<OpenRouterModel>,
+    pub available_models: Vec<ModelDescriptor>,
     pub loading_models: bool,
     pub sending_message: bool,
     pub show_folder_modal: bool,
     pub new_folder_name: String,
     pub selected_folder_id: String,
     pub show_export_modal: bool,
+    pub show_api_settings_window: bool,
+    pub api_key_masked: bool,
     pub rt: Option<tokio::runtime::Runtime>,
     pub api_promise: Option<Promise<Result<String, String>>>,
     pub current_theme_type: ThemeType,
@@ -51,8 +56,9 @@ impl Default for OverlookApp {
         let theme_type = Storage::load_theme().unwrap_or_default();
         let theme = Theme::from_theme_type(&theme_type);
         Self {
-            api_key: String::default(),
+            api_keys: ProviderKeys::default(),
             current_chat_id: None,
+            current_provider: ProviderKind::default(),
             current_model: String::default(),
             message_input: String::default(),
             chats: ChatMap::default(),
@@ -64,6 +70,8 @@ impl Default for OverlookApp {
             new_folder_name: String::default(),
             selected_folder_id: String::default(),
             show_export_modal: bool::default(),
+            show_api_settings_window: false,
+            api_key_masked: true,
             rt: None,
             api_promise: None,
             current_theme_type: theme_type,
@@ -136,13 +144,22 @@ impl OverlookApp {
         };
         app.load_data();
 
+        if app.api_keys.get(app.current_provider).is_empty() {
+            if let Some(provider_with_key) = ProviderKind::all()
+                .into_iter()
+                .find(|p| !app.api_keys.get(*p).is_empty())
+            {
+                app.current_provider = provider_with_key;
+            }
+        }
+
         // Apply theme to egui style
         cc.egui_ctx.style_mut(|style| {
             app.current_theme.apply_to_egui_style(style, app.font_size);
         });
 
         // Load models if we have an API key
-        if !app.api_key.is_empty() {
+        if !app.api_keys.get(app.current_provider).is_empty() {
             app.load_models();
         }
 
@@ -150,15 +167,15 @@ impl OverlookApp {
     }
 
     fn load_data(&mut self) {
-        self.api_key = Storage::load_api_key().unwrap_or_default();
+        self.api_keys = Storage::load_api_keys().unwrap_or_default();
         self.chats = Storage::load_chats().unwrap_or_default();
         self.folders = Storage::load_folders().unwrap_or_default();
         self.font_size = Storage::load_font_size().unwrap_or(14.0);
     }
 
     pub fn save_data(&self) {
-        if let Err(e) = Storage::save_api_key(&self.api_key) {
-            println!("❌ Failed to save API key: {}", e);
+        if let Err(e) = Storage::save_api_keys(&self.api_keys) {
+            println!("❌ Failed to save API keys: {}", e);
         }
         if let Err(e) = Storage::save_chats(&self.chats) {
             println!("❌ Failed to save chats: {}", e);
@@ -188,6 +205,7 @@ impl OverlookApp {
             title: "New Chat".to_string(),
             messages: Vec::new(),
             model: String::new(),
+            provider: self.current_provider,
             folder: None,
             created_at: now,
             updated_at: now,
@@ -199,46 +217,84 @@ impl OverlookApp {
     }
 
     pub fn load_models(&mut self) {
-        if self.api_key.is_empty() || self.loading_models {
+        if self.loading_models {
+            return;
+        }
+
+        let provider = self.current_provider;
+        let api_key = self.api_keys.get(provider).trim().to_string();
+
+        if api_key.is_empty() {
+            self.available_models.clear();
+            self.current_model.clear();
             return;
         }
 
         self.loading_models = true;
-        let api_key = self.api_key.clone();
 
         println!(
-            "Loading models with API key: {}...",
+            "Loading models for {} with key prefix: {}",
+            provider.display_name(),
             &api_key[..std::cmp::min(8, api_key.len())]
         );
 
         if let Some(rt) = &self.rt {
-            let api_client = ApiClient::new();
-            let models_future = async move {
-                match api_client.load_models(&api_key).await {
-                    Ok(models) => {
-                        println!("Successfully loaded {} models", models.len());
-                        Ok(models)
-                    }
-                    Err(e) => {
-                        eprintln!("Error loading models: {}", e);
-                        Err(format!("Failed to load models: {}", e))
-                    }
-                }
+            let models_future = {
+                let api_client = ApiClient::new();
+                let api_key = api_key.clone();
+                async move { api_client.load_models(provider, &api_key).await }
             };
 
             match rt.block_on(models_future) {
                 Ok(models) => {
+                    println!(
+                        "Successfully loaded {} models for {}",
+                        models.len(),
+                        provider.display_name()
+                    );
                     self.available_models = models;
-                    println!("Models loaded successfully!");
+
+                    let has_current = self
+                        .available_models
+                        .iter()
+                        .any(|model| model.id == self.current_model);
+
+                    if !has_current {
+                        if let Some(first) = self.available_models.first() {
+                            self.current_model = first.id.clone();
+                        } else {
+                            self.current_model.clear();
+                        }
+                    }
                 }
                 Err(e) => {
-                    eprintln!("Error loading models: {}", e);
+                    eprintln!(
+                        "Error loading models for {}: {}",
+                        provider.display_name(),
+                        e
+                    );
                     self.available_models.clear();
+                    self.current_model.clear();
                 }
             }
         }
 
         self.loading_models = false;
+    }
+
+    pub fn set_current_provider(&mut self, provider: ProviderKind) {
+        if self.current_provider == provider {
+            return;
+        }
+
+        self.current_provider = provider;
+        self.current_model.clear();
+
+        if self.api_keys.get(provider).trim().is_empty() {
+            self.available_models.clear();
+        } else {
+            self.load_models();
+        }
     }
 
     pub fn send_message(&mut self, _ctx: &egui::Context) {
@@ -251,8 +307,11 @@ impl OverlookApp {
             return;
         }
 
-        if self.api_key.is_empty() {
-            eprintln!("No API key provided");
+        let provider = self.current_provider;
+        let api_key = self.api_keys.get(provider).trim().to_string();
+
+        if api_key.is_empty() {
+            eprintln!("No API key provided for {}", provider.display_name());
             return;
         }
 
@@ -308,6 +367,8 @@ impl OverlookApp {
         if let Some(chat) = self.chats.get_mut(&chat_id) {
             chat.messages.push(user_message.clone());
             chat.updated_at = Utc::now();
+            chat.model = self.current_model.clone();
+            chat.provider = provider;
 
             // Update title if it's the first message
             if chat.title == "New Chat" {
@@ -326,13 +387,8 @@ impl OverlookApp {
         self.save_data();
 
         // Start async API call
-        let api_key = self.api_key.clone();
         let model = self.current_model.clone();
-        let messages: Vec<_> = self.chats[&chat_id]
-            .messages
-            .iter()
-            .map(|m| serde_json::json!({"role": m.role, "content": m.content}))
-            .collect();
+        let history = self.chats[&chat_id].messages.clone();
 
         if self.streaming_enabled {
             // Use real-time streaming with character-level smoothing
@@ -351,6 +407,7 @@ impl OverlookApp {
             let (token_sender, token_receiver) = mpsc::channel();
             self.token_receiver = Some(token_receiver);
 
+            let stream_history = history.clone();
             let promise = Promise::spawn_thread("streaming_api_call", move || {
                 let rt = match Self::create_optimized_runtime() {
                     Ok(rt) => rt,
@@ -365,7 +422,7 @@ impl OverlookApp {
 
                     let api_client = ApiClient::new();
                     match api_client
-                        .stream_chat_completion(&api_key, &model, messages)
+                        .stream_chat_completion(provider, &api_key, &model, stream_history)
                         .await
                     {
                         Ok(stream) => {
@@ -416,7 +473,7 @@ impl OverlookApp {
                 rt.block_on(async move {
                     let api_client = ApiClient::new();
                     match api_client
-                        .send_chat_message(&api_key, &model, messages)
+                        .send_chat_message(provider, &api_key, &model, history)
                         .await
                     {
                         Ok(response) => Ok(response),
@@ -551,7 +608,6 @@ impl OverlookApp {
 
             if stored {
                 chat.updated_at = Utc::now();
-                chat.model = self.current_model.clone();
             }
 
             stored
@@ -621,7 +677,6 @@ impl OverlookApp {
                             if let Some(chat) = self.chats.get_mut(current_chat_id) {
                                 chat.messages.push(assistant_message);
                                 chat.updated_at = Utc::now();
-                                chat.model = self.current_model.clone();
                             }
                         }
                         Err(e) => {

@@ -5,6 +5,7 @@ pub struct Exporter;
 impl Exporter {
     pub fn generate_chat_markdown(chat: &Chat) -> String {
         let mut markdown = format!("# {}\n\n", chat.title);
+        markdown.push_str(&format!("**Provider:** {}\n", chat.provider.display_name()));
         markdown.push_str(&format!("**Model:** {}\n", chat.model));
         markdown.push_str(&format!(
             "**Created:** {}\n",
