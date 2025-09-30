@@ -4,6 +4,9 @@ use eventsource_stream::Eventsource;
 use futures_util::{stream::BoxStream, StreamExt};
 use serde::Deserialize;
 use serde_json::{json, Value};
+use std::time::Duration;
+use tokio_retry::strategy::{jitter, ExponentialBackoff};
+use tokio_retry::Retry;
 
 const OPENAI_MODELS_ENDPOINT: &str = "https://api.openai.com/v1/models";
 const OPENAI_CHAT_COMPLETIONS_ENDPOINT: &str = "https://api.openai.com/v1/chat/completions";
@@ -33,6 +36,32 @@ impl ApiClient {
         }
     }
 
+    /// Determines if an error should be retried based on the status code
+    fn is_retryable_error(error: &anyhow::Error) -> bool {
+        if let Some(reqwest_error) = error.downcast_ref::<reqwest::Error>() {
+            // Retry on network/connection errors
+            if reqwest_error.is_timeout() || reqwest_error.is_connect() {
+                return true;
+            }
+
+            // Check HTTP status codes
+            if let Some(status) = reqwest_error.status() {
+                let code = status.as_u16();
+                // Retry on rate limiting and server errors
+                return code == 429 || code == 500 || code == 502 || code == 503 || code == 504;
+            }
+        }
+        false
+    }
+
+    /// Creates a retry strategy with exponential backoff and jitter
+    fn retry_strategy() -> impl Iterator<Item = Duration> {
+        ExponentialBackoff::from_millis(1000) // Start at 1 second
+            .max_delay(Duration::from_secs(8)) // Cap at 8 seconds
+            .take(3) // Max 3 attempts (initial + 2 retries)
+            .map(jitter) // Add jitter to each duration
+    }
+
     pub async fn load_models(
         &self,
         provider: ProviderKind,
@@ -46,51 +75,49 @@ impl ApiClient {
     }
 
     async fn load_openrouter_models(&self, api_key: &str) -> Result<Vec<ModelDescriptor>> {
-        let response = self
-            .client
-            .get(OPENROUTER_MODELS_ENDPOINT)
-            .header("Authorization", format!("Bearer {}", api_key))
-            .header("HTTP-Referer", "https://github.com/your-username/overlook")
-            .header("X-Title", "Overlook Chat")
-            .send()
-            .await?;
+        let api_key = api_key.to_string();
+        let client = self.client.clone();
 
-        let status = response.status();
-        if !status.is_success() {
-            let error_text = response
-                .text()
-                .await
-                .unwrap_or_else(|_| "Unknown error".to_string());
-            return Err(anyhow!("OpenRouter API error {}: {}", status, error_text));
-        }
+        Retry::spawn(Self::retry_strategy(), move || {
+            let api_key = api_key.clone();
+            let client = client.clone();
+            async move {
+                let response = client
+                    .get(OPENROUTER_MODELS_ENDPOINT)
+                    .header("Authorization", format!("Bearer {}", api_key))
+                    .header("HTTP-Referer", "https://github.com/your-username/overlook")
+                    .header("X-Title", "Overlook Chat")
+                    .send()
+                    .await
+                    .map_err(|e| anyhow!(e))?;
 
-        let models_response: ModelsResponse = response.json().await?;
-        let mut models: Vec<ModelDescriptor> = models_response
-            .data
-            .into_iter()
-            .map(ModelDescriptor::from)
-            .collect();
-        models.sort_by(|a, b| a.name.cmp(&b.name));
-        Ok(models)
+                let status = response.status();
+                if !status.is_success() {
+                    let error_text = response
+                        .text()
+                        .await
+                        .unwrap_or_else(|_| "Unknown error".to_string());
+                    let error = anyhow!("OpenRouter API error {}: {}", status, error_text);
+                    if Self::is_retryable_error(&error) {
+                        eprintln!("Retrying OpenRouter models request: {}", error);
+                    }
+                    return Err(error);
+                }
+
+                let models_response: ModelsResponse = response.json().await?;
+                let mut models: Vec<ModelDescriptor> = models_response
+                    .data
+                    .into_iter()
+                    .map(ModelDescriptor::from)
+                    .collect();
+                models.sort_by(|a, b| a.name.cmp(&b.name));
+                Ok(models)
+            }
+        })
+        .await
     }
 
     async fn load_openai_models(&self, api_key: &str) -> Result<Vec<ModelDescriptor>> {
-        let response = self
-            .client
-            .get(OPENAI_MODELS_ENDPOINT)
-            .header("Authorization", format!("Bearer {}", api_key))
-            .send()
-            .await?;
-
-        let status = response.status();
-        if !status.is_success() {
-            let error_text = response
-                .text()
-                .await
-                .unwrap_or_else(|_| "Unknown error".to_string());
-            return Err(anyhow!("OpenAI API error {}: {}", status, error_text));
-        }
-
         #[derive(Deserialize)]
         struct OpenAIModelList {
             data: Vec<OpenAIModel>,
@@ -102,53 +129,66 @@ impl ApiClient {
             owned_by: Option<String>,
         }
 
-        let mut models: Vec<ModelDescriptor> = response
-            .json::<OpenAIModelList>()
-            .await?
-            .data
-            .into_iter()
-            .filter(|model| is_supported_openai_model(&model.id))
-            .map(|model| {
-                let context_length = openai_context_length(&model.id);
-                ModelDescriptor {
-                    name: format_model_name(&model.id),
-                    id: model.id.clone(),
-                    description: model.owned_by.map(|owner| format!("Owned by {}", owner)),
-                    provider: ProviderKind::OpenAI,
-                    context_length,
-                    max_output_tokens: None,
-                    tokenizer: Some(openai_tokenizer_name(&model.id)),
+        let api_key = api_key.to_string();
+        let client = self.client.clone();
+
+        Retry::spawn(Self::retry_strategy(), move || {
+            let api_key = api_key.clone();
+            let client = client.clone();
+            async move {
+                let response = client
+                    .get(OPENAI_MODELS_ENDPOINT)
+                    .header("Authorization", format!("Bearer {}", api_key))
+                    .send()
+                    .await
+                    .map_err(|e| anyhow!(e))?;
+
+                let status = response.status();
+                if !status.is_success() {
+                    let error_text = response
+                        .text()
+                        .await
+                        .unwrap_or_else(|_| "Unknown error".to_string());
+                    let error = anyhow!("OpenAI API error {}: {}", status, error_text);
+                    if Self::is_retryable_error(&error) {
+                        eprintln!("Retrying OpenAI models request: {}", error);
+                    }
+                    return Err(error);
                 }
-            })
-            .collect();
 
-        if models.is_empty() {
-            // Provide a sensible default list when the API returns nothing or access is restricted.
-            models = fallback_openai_models();
-        }
+                let mut models: Vec<ModelDescriptor> = response
+                    .json::<OpenAIModelList>()
+                    .await?
+                    .data
+                    .into_iter()
+                    .filter(|model| is_supported_openai_model(&model.id))
+                    .map(|model| {
+                        let context_length = openai_context_length(&model.id);
+                        ModelDescriptor {
+                            name: format_model_name(&model.id),
+                            id: model.id.clone(),
+                            description: model.owned_by.map(|owner| format!("Owned by {}", owner)),
+                            provider: ProviderKind::OpenAI,
+                            context_length,
+                            max_output_tokens: None,
+                            tokenizer: Some(openai_tokenizer_name(&model.id)),
+                        }
+                    })
+                    .collect();
 
-        models.sort_by(|a, b| a.name.cmp(&b.name));
-        Ok(models)
+                if models.is_empty() {
+                    // Provide a sensible default list when the API returns nothing or access is restricted.
+                    models = fallback_openai_models();
+                }
+
+                models.sort_by(|a, b| a.name.cmp(&b.name));
+                Ok(models)
+            }
+        })
+        .await
     }
 
     async fn load_anthropic_models(&self, api_key: &str) -> Result<Vec<ModelDescriptor>> {
-        let response = self
-            .client
-            .get(ANTHROPIC_MODELS_ENDPOINT)
-            .header("x-api-key", api_key)
-            .header("anthropic-version", ANTHROPIC_VERSION)
-            .send()
-            .await?;
-
-        let status = response.status();
-        if !status.is_success() {
-            let error_text = response
-                .text()
-                .await
-                .unwrap_or_else(|_| "Unknown error".to_string());
-            return Err(anyhow!("Anthropic API error {}: {}", status, error_text));
-        }
-
         #[derive(Deserialize)]
         struct AnthropicModelList {
             data: Vec<AnthropicModel>,
@@ -159,29 +199,60 @@ impl ApiClient {
             id: String,
         }
 
-        let mut models: Vec<ModelDescriptor> = response
-            .json::<AnthropicModelList>()
-            .await?
-            .data
-            .into_iter()
-            .filter(|model| model.id.starts_with("claude"))
-            .map(|model| ModelDescriptor {
-                name: format_model_name(&model.id),
-                id: model.id.clone(),
-                description: None,
-                provider: ProviderKind::Anthropic,
-                context_length: anthropic_context_length(&model.id),
-                max_output_tokens: None,
-                tokenizer: Some(anthropic_tokenizer_name(&model.id)),
-            })
-            .collect();
+        let api_key = api_key.to_string();
+        let client = self.client.clone();
 
-        if models.is_empty() {
-            models = fallback_anthropic_models();
-        }
+        Retry::spawn(Self::retry_strategy(), move || {
+            let api_key = api_key.clone();
+            let client = client.clone();
+            async move {
+                let response = client
+                    .get(ANTHROPIC_MODELS_ENDPOINT)
+                    .header("x-api-key", &api_key)
+                    .header("anthropic-version", ANTHROPIC_VERSION)
+                    .send()
+                    .await
+                    .map_err(|e| anyhow!(e))?;
 
-        models.sort_by(|a, b| a.name.cmp(&b.name));
-        Ok(models)
+                let status = response.status();
+                if !status.is_success() {
+                    let error_text = response
+                        .text()
+                        .await
+                        .unwrap_or_else(|_| "Unknown error".to_string());
+                    let error = anyhow!("Anthropic API error {}: {}", status, error_text);
+                    if Self::is_retryable_error(&error) {
+                        eprintln!("Retrying Anthropic models request: {}", error);
+                    }
+                    return Err(error);
+                }
+
+                let mut models: Vec<ModelDescriptor> = response
+                    .json::<AnthropicModelList>()
+                    .await?
+                    .data
+                    .into_iter()
+                    .filter(|model| model.id.starts_with("claude"))
+                    .map(|model| ModelDescriptor {
+                        name: format_model_name(&model.id),
+                        id: model.id.clone(),
+                        description: None,
+                        provider: ProviderKind::Anthropic,
+                        context_length: anthropic_context_length(&model.id),
+                        max_output_tokens: None,
+                        tokenizer: Some(anthropic_tokenizer_name(&model.id)),
+                    })
+                    .collect();
+
+                if models.is_empty() {
+                    models = fallback_anthropic_models();
+                }
+
+                models.sort_by(|a, b| a.name.cmp(&b.name));
+                Ok(models)
+            }
+        })
+        .await
     }
 
     pub async fn send_chat_message(
@@ -204,33 +275,51 @@ impl ApiClient {
         model: &str,
         messages: &[Message],
     ) -> Result<String> {
-        let request_body = json!({
-            "model": model,
-            "messages": openai_style_messages(messages),
-            "temperature": 0.7
-        });
+        let api_key = api_key.to_string();
+        let model = model.to_string();
+        let messages = messages.to_vec();
+        let client = self.client.clone();
 
-        let response = self
-            .client
-            .post(OPENROUTER_CHAT_ENDPOINT)
-            .header("Authorization", format!("Bearer {}", api_key))
-            .header("Content-Type", "application/json")
-            .header("HTTP-Referer", "https://github.com/your-username/overlook")
-            .header("X-Title", "Overlook Chat")
-            .json(&request_body)
-            .send()
-            .await?;
+        Retry::spawn(Self::retry_strategy(), move || {
+            let api_key = api_key.clone();
+            let model = model.clone();
+            let messages = messages.clone();
+            let client = client.clone();
+            async move {
+                let request_body = json!({
+                    "model": model,
+                    "messages": openai_style_messages(&messages),
+                    "temperature": 0.7
+                });
 
-        let status = response.status();
-        if !status.is_success() {
-            let error_text = response
-                .text()
-                .await
-                .unwrap_or_else(|_| "Unknown error".to_string());
-            return Err(anyhow!("OpenRouter chat error {}: {}", status, error_text));
-        }
+                let response = client
+                    .post(OPENROUTER_CHAT_ENDPOINT)
+                    .header("Authorization", format!("Bearer {}", api_key))
+                    .header("Content-Type", "application/json")
+                    .header("HTTP-Referer", "https://github.com/your-username/overlook")
+                    .header("X-Title", "Overlook Chat")
+                    .json(&request_body)
+                    .send()
+                    .await
+                    .map_err(|e| anyhow!(e))?;
 
-        extract_openai_style_response(response.json().await?)
+                let status = response.status();
+                if !status.is_success() {
+                    let error_text = response
+                        .text()
+                        .await
+                        .unwrap_or_else(|_| "Unknown error".to_string());
+                    let error = anyhow!("OpenRouter chat error {}: {}", status, error_text);
+                    if Self::is_retryable_error(&error) {
+                        eprintln!("Retrying OpenRouter chat request: {}", error);
+                    }
+                    return Err(error);
+                }
+
+                extract_openai_style_response(response.json().await?)
+            }
+        })
+        .await
     }
 
     async fn send_openai_chat(
@@ -239,31 +328,49 @@ impl ApiClient {
         model: &str,
         messages: &[Message],
     ) -> Result<String> {
-        let request_body = json!({
-            "model": model,
-            "messages": openai_style_messages(messages),
-            "temperature": 0.7
-        });
+        let api_key = api_key.to_string();
+        let model = model.to_string();
+        let messages = messages.to_vec();
+        let client = self.client.clone();
 
-        let response = self
-            .client
-            .post(OPENAI_CHAT_COMPLETIONS_ENDPOINT)
-            .header("Authorization", format!("Bearer {}", api_key))
-            .header("Content-Type", "application/json")
-            .json(&request_body)
-            .send()
-            .await?;
+        Retry::spawn(Self::retry_strategy(), move || {
+            let api_key = api_key.clone();
+            let model = model.clone();
+            let messages = messages.clone();
+            let client = client.clone();
+            async move {
+                let request_body = json!({
+                    "model": model,
+                    "messages": openai_style_messages(&messages),
+                    "temperature": 0.7
+                });
 
-        let status = response.status();
-        if !status.is_success() {
-            let error_text = response
-                .text()
-                .await
-                .unwrap_or_else(|_| "Unknown error".to_string());
-            return Err(anyhow!("OpenAI chat error {}: {}", status, error_text));
-        }
+                let response = client
+                    .post(OPENAI_CHAT_COMPLETIONS_ENDPOINT)
+                    .header("Authorization", format!("Bearer {}", api_key))
+                    .header("Content-Type", "application/json")
+                    .json(&request_body)
+                    .send()
+                    .await
+                    .map_err(|e| anyhow!(e))?;
 
-        extract_openai_style_response(response.json().await?)
+                let status = response.status();
+                if !status.is_success() {
+                    let error_text = response
+                        .text()
+                        .await
+                        .unwrap_or_else(|_| "Unknown error".to_string());
+                    let error = anyhow!("OpenAI chat error {}: {}", status, error_text);
+                    if Self::is_retryable_error(&error) {
+                        eprintln!("Retrying OpenAI chat request: {}", error);
+                    }
+                    return Err(error);
+                }
+
+                extract_openai_style_response(response.json().await?)
+            }
+        })
+        .await
     }
 
     async fn send_anthropic_chat(
@@ -272,29 +379,47 @@ impl ApiClient {
         model: &str,
         messages: &[Message],
     ) -> Result<String> {
-        let request_body = anthropic_request_body(messages, model, false);
+        let api_key = api_key.to_string();
+        let model = model.to_string();
+        let messages = messages.to_vec();
+        let client = self.client.clone();
 
-        let response = self
-            .client
-            .post(ANTHROPIC_MESSAGES_ENDPOINT)
-            .header("x-api-key", api_key)
-            .header("anthropic-version", ANTHROPIC_VERSION)
-            .header("Content-Type", "application/json")
-            .json(&request_body)
-            .send()
-            .await?;
+        Retry::spawn(Self::retry_strategy(), move || {
+            let api_key = api_key.clone();
+            let model = model.clone();
+            let messages = messages.clone();
+            let client = client.clone();
+            async move {
+                let request_body = anthropic_request_body(&messages, &model, false);
 
-        let status = response.status();
-        if !status.is_success() {
-            let error_text = response
-                .text()
-                .await
-                .unwrap_or_else(|_| "Unknown error".to_string());
-            return Err(anyhow!("Anthropic chat error {}: {}", status, error_text));
-        }
+                let response = client
+                    .post(ANTHROPIC_MESSAGES_ENDPOINT)
+                    .header("x-api-key", &api_key)
+                    .header("anthropic-version", ANTHROPIC_VERSION)
+                    .header("Content-Type", "application/json")
+                    .json(&request_body)
+                    .send()
+                    .await
+                    .map_err(|e| anyhow!(e))?;
 
-        let data: Value = response.json().await?;
-        Ok(extract_anthropic_response(&data))
+                let status = response.status();
+                if !status.is_success() {
+                    let error_text = response
+                        .text()
+                        .await
+                        .unwrap_or_else(|_| "Unknown error".to_string());
+                    let error = anyhow!("Anthropic chat error {}: {}", status, error_text);
+                    if Self::is_retryable_error(&error) {
+                        eprintln!("Retrying Anthropic chat request: {}", error);
+                    }
+                    return Err(error);
+                }
+
+                let data: Value = response.json().await?;
+                Ok(extract_anthropic_response(&data))
+            }
+        })
+        .await
     }
 
     pub async fn stream_chat_completion(
@@ -306,36 +431,56 @@ impl ApiClient {
     ) -> Result<BoxStream<'static, StreamItem>> {
         match provider {
             ProviderKind::OpenRouter => {
-                let request_body = json!({
-                    "model": model,
-                    "messages": openai_style_messages(&messages),
-                    "temperature": 0.7,
-                    "stream": true
-                });
+                let api_key = api_key.to_string();
+                let model = model.to_string();
+                let client = self.client.clone();
 
-                let response = self
-                    .client
-                    .post(OPENROUTER_CHAT_ENDPOINT)
-                    .header("Authorization", format!("Bearer {}", api_key))
-                    .header("Content-Type", "application/json")
-                    .header("HTTP-Referer", "https://github.com/your-username/overlook")
-                    .header("X-Title", "Overlook Chat")
-                    .json(&request_body)
-                    .send()
-                    .await?;
+                // Retry the initial connection with backoff
+                let response = Retry::spawn(Self::retry_strategy(), move || {
+                    let api_key = api_key.clone();
+                    let model = model.clone();
+                    let messages = messages.clone();
+                    let client = client.clone();
+                    async move {
+                        let request_body = json!({
+                            "model": model,
+                            "messages": openai_style_messages(&messages),
+                            "temperature": 0.7,
+                            "stream": true
+                        });
 
-                let status = response.status();
-                if !status.is_success() {
-                    let error_text = response
-                        .text()
-                        .await
-                        .unwrap_or_else(|_| "Unknown error".to_string());
-                    return Err(anyhow!(
-                        "OpenRouter streaming error {}: {}",
-                        status,
-                        error_text
-                    ));
-                }
+                        let response = client
+                            .post(OPENROUTER_CHAT_ENDPOINT)
+                            .header("Authorization", format!("Bearer {}", api_key))
+                            .header("Content-Type", "application/json")
+                            .header("HTTP-Referer", "https://github.com/your-username/overlook")
+                            .header("X-Title", "Overlook Chat")
+                            .json(&request_body)
+                            .send()
+                            .await
+                            .map_err(|e| anyhow!(e))?;
+
+                        let status = response.status();
+                        if !status.is_success() {
+                            let error_text = response
+                                .text()
+                                .await
+                                .unwrap_or_else(|_| "Unknown error".to_string());
+                            let error = anyhow!(
+                                "OpenRouter streaming error {}: {}",
+                                status,
+                                error_text
+                            );
+                            if Self::is_retryable_error(&error) {
+                                eprintln!("Retrying OpenRouter streaming connection: {}", error);
+                            }
+                            return Err(error);
+                        }
+
+                        Ok(response)
+                    }
+                })
+                .await?;
 
                 let stream = response
                     .bytes_stream()
@@ -366,31 +511,51 @@ impl ApiClient {
                 Ok(stream)
             }
             ProviderKind::OpenAI => {
-                let request_body = json!({
-                    "model": model,
-                    "messages": openai_style_messages(&messages),
-                    "temperature": 0.7,
-                    "stream": true
-                });
+                let api_key = api_key.to_string();
+                let model = model.to_string();
+                let client = self.client.clone();
 
-                let response = self
-                    .client
-                    .post(OPENAI_CHAT_COMPLETIONS_ENDPOINT)
-                    .header("Authorization", format!("Bearer {}", api_key))
-                    .header("Content-Type", "application/json")
-                    .header("Accept", "text/event-stream")
-                    .json(&request_body)
-                    .send()
-                    .await?;
+                // Retry the initial connection with backoff
+                let response = Retry::spawn(Self::retry_strategy(), move || {
+                    let api_key = api_key.clone();
+                    let model = model.clone();
+                    let messages = messages.clone();
+                    let client = client.clone();
+                    async move {
+                        let request_body = json!({
+                            "model": model,
+                            "messages": openai_style_messages(&messages),
+                            "temperature": 0.7,
+                            "stream": true
+                        });
 
-                let status = response.status();
-                if !status.is_success() {
-                    let error_text = response
-                        .text()
-                        .await
-                        .unwrap_or_else(|_| "Unknown error".to_string());
-                    return Err(anyhow!("OpenAI streaming error {}: {}", status, error_text));
-                }
+                        let response = client
+                            .post(OPENAI_CHAT_COMPLETIONS_ENDPOINT)
+                            .header("Authorization", format!("Bearer {}", api_key))
+                            .header("Content-Type", "application/json")
+                            .header("Accept", "text/event-stream")
+                            .json(&request_body)
+                            .send()
+                            .await
+                            .map_err(|e| anyhow!(e))?;
+
+                        let status = response.status();
+                        if !status.is_success() {
+                            let error_text = response
+                                .text()
+                                .await
+                                .unwrap_or_else(|_| "Unknown error".to_string());
+                            let error = anyhow!("OpenAI streaming error {}: {}", status, error_text);
+                            if Self::is_retryable_error(&error) {
+                                eprintln!("Retrying OpenAI streaming connection: {}", error);
+                            }
+                            return Err(error);
+                        }
+
+                        Ok(response)
+                    }
+                })
+                .await?;
 
                 let stream = response
                     .bytes_stream()
@@ -421,31 +586,51 @@ impl ApiClient {
                 Ok(stream)
             }
             ProviderKind::Anthropic => {
-                let request_body = anthropic_request_body(messages.as_slice(), model, true);
+                let api_key = api_key.to_string();
+                let model = model.to_string();
+                let client = self.client.clone();
 
-                let response = self
-                    .client
-                    .post(ANTHROPIC_MESSAGES_ENDPOINT)
-                    .header("x-api-key", api_key)
-                    .header("anthropic-version", ANTHROPIC_VERSION)
-                    .header("Content-Type", "application/json")
-                    .header("Accept", "text/event-stream")
-                    .json(&request_body)
-                    .send()
-                    .await?;
+                // Retry the initial connection with backoff
+                let response = Retry::spawn(Self::retry_strategy(), move || {
+                    let api_key = api_key.clone();
+                    let model = model.clone();
+                    let messages = messages.clone();
+                    let client = client.clone();
+                    async move {
+                        let request_body = anthropic_request_body(messages.as_slice(), &model, true);
 
-                let status = response.status();
-                if !status.is_success() {
-                    let error_text = response
-                        .text()
-                        .await
-                        .unwrap_or_else(|_| "Unknown error".to_string());
-                    return Err(anyhow!(
-                        "Anthropic streaming error {}: {}",
-                        status,
-                        error_text
-                    ));
-                }
+                        let response = client
+                            .post(ANTHROPIC_MESSAGES_ENDPOINT)
+                            .header("x-api-key", &api_key)
+                            .header("anthropic-version", ANTHROPIC_VERSION)
+                            .header("Content-Type", "application/json")
+                            .header("Accept", "text/event-stream")
+                            .json(&request_body)
+                            .send()
+                            .await
+                            .map_err(|e| anyhow!(e))?;
+
+                        let status = response.status();
+                        if !status.is_success() {
+                            let error_text = response
+                                .text()
+                                .await
+                                .unwrap_or_else(|_| "Unknown error".to_string());
+                            let error = anyhow!(
+                                "Anthropic streaming error {}: {}",
+                                status,
+                                error_text
+                            );
+                            if Self::is_retryable_error(&error) {
+                                eprintln!("Retrying Anthropic streaming connection: {}", error);
+                            }
+                            return Err(error);
+                        }
+
+                        Ok(response)
+                    }
+                })
+                .await?;
 
                 let stream = response
                     .bytes_stream()
