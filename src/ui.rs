@@ -199,21 +199,107 @@ impl OverlookApp {
 
                     ui.separator();
 
+                    // Projects section
+                    self.render_projects_section(ui);
+
+                    ui.separator();
+
                     // Chats list
                     self.render_chats_list(ui);
                 });
             });
     }
 
+    fn render_projects_section(&mut self, ui: &mut egui::Ui) {
+        ui.label(egui::RichText::new("Projects").strong());
+        ui.add_space(4.0);
+
+        ui.horizontal(|ui| {
+            // "All Chats" option
+            let is_all_selected = self.current_project_id.is_none();
+            let button = egui::Button::new("📋 All Chats").fill(if is_all_selected {
+                self.current_theme.accent
+            } else {
+                egui::Color32::TRANSPARENT
+            });
+            if ui.add_sized([150.0, 25.0], button).clicked() {
+                self.current_project_id = None;
+            }
+
+            // Add project button
+            if ui.button("➕").clicked() {
+                self.new_project_name.clear();
+                self.project_modal_mode = crate::app::ProjectModalMode::Create;
+                self.show_project_modal = true;
+            }
+        });
+
+        ui.add_space(4.0);
+
+        // List of projects
+        let mut projects_vec: Vec<_> = self.projects.values().cloned().collect();
+        projects_vec.sort_by(|a, b| a.name.cmp(&b.name));
+
+        let mut project_to_select: Option<String> = None;
+        let mut project_to_rename: Option<String> = None;
+        let mut project_to_delete: Option<String> = None;
+
+        for project in projects_vec {
+            let is_selected = self.current_project_id.as_ref() == Some(&project.id);
+
+            ui.horizontal(|ui| {
+                let button = egui::Button::new(format!("📁 {}", project.name)).fill(if is_selected {
+                    self.current_theme.accent
+                } else {
+                    egui::Color32::TRANSPARENT
+                });
+
+                if ui.add_sized([150.0, 25.0], button).clicked() {
+                    project_to_select = Some(project.id.clone());
+                }
+
+                // Context menu for rename/delete
+                if ui.small_button("⋯").clicked() {
+                    // For now, we'll handle this with separate buttons
+                }
+
+                if ui.small_button("✏").clicked() {
+                    project_to_rename = Some(project.id.clone());
+                }
+
+                if ui.small_button("🗑").clicked() {
+                    project_to_delete = Some(project.id.clone());
+                }
+            });
+        }
+
+        // Handle actions
+        if let Some(project_id) = project_to_select {
+            self.current_project_id = Some(project_id);
+        }
+
+        if let Some(project_id) = project_to_rename {
+            if let Some(project) = self.projects.get(&project_id) {
+                self.new_project_name = project.name.clone();
+                self.project_modal_mode = crate::app::ProjectModalMode::Rename;
+                self.project_modal_target_id = Some(project_id);
+                self.show_project_modal = true;
+            }
+        }
+
+        if let Some(project_id) = project_to_delete {
+            self.delete_project(&project_id);
+        }
+    }
+
     fn render_chats_list(&mut self, ui: &mut egui::Ui) {
         egui::ScrollArea::vertical().show(ui, |ui| {
-            let mut chats_vec: Vec<_> = self.chats.iter().map(|(_, chat)| chat.clone()).collect();
-            chats_vec.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
+            let chats_vec = self.get_filtered_chats();
 
             let mut chat_to_delete: Option<String> = None;
             let mut chat_to_select: Option<String> = None;
 
-            for chat in chats_vec {
+            for chat in chats_vec.iter() {
                 let is_selected = self.current_chat_id.as_ref() == Some(&chat.id);
 
                 ui.horizontal(|ui| {
@@ -352,7 +438,7 @@ impl OverlookApp {
                 }
 
                 if ui.button("📁 Organize").clicked() {
-                    self.show_folder_modal = true;
+                    self.show_organize_modal = true;
                 }
 
                 // Theme selector
@@ -749,6 +835,114 @@ impl OverlookApp {
                             self.show_export_modal = false;
                         }
                     });
+                });
+        }
+
+        // Project modal
+        if self.show_project_modal {
+            let title = match self.project_modal_mode {
+                crate::app::ProjectModalMode::Create => "New Project",
+                crate::app::ProjectModalMode::Rename => "Rename Project",
+            };
+
+            egui::Window::new(title)
+                .collapsible(false)
+                .resizable(false)
+                .show(ctx, |ui| {
+                    ui.label("Project name:");
+                    let response = ui.text_edit_singleline(&mut self.new_project_name);
+
+                    if response.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
+                        // Submit on Enter
+                        match self.project_modal_mode {
+                            crate::app::ProjectModalMode::Create => {
+                                self.create_project(self.new_project_name.clone());
+                            }
+                            crate::app::ProjectModalMode::Rename => {
+                                if let Some(project_id) = self.project_modal_target_id.clone() {
+                                    self.rename_project(project_id, self.new_project_name.clone());
+                                }
+                            }
+                        }
+                        self.show_project_modal = false;
+                        self.new_project_name.clear();
+                    }
+
+                    ui.add_space(10.0);
+
+                    ui.horizontal(|ui| {
+                        let button_text = match self.project_modal_mode {
+                            crate::app::ProjectModalMode::Create => "Create",
+                            crate::app::ProjectModalMode::Rename => "Rename",
+                        };
+
+                        if ui.button(button_text).clicked() && !self.new_project_name.trim().is_empty() {
+                            match self.project_modal_mode {
+                                crate::app::ProjectModalMode::Create => {
+                                    self.create_project(self.new_project_name.clone());
+                                }
+                                crate::app::ProjectModalMode::Rename => {
+                                    if let Some(project_id) = self.project_modal_target_id.clone() {
+                                        self.rename_project(project_id, self.new_project_name.clone());
+                                    }
+                                }
+                            }
+                            self.show_project_modal = false;
+                            self.new_project_name.clear();
+                        }
+
+                        if ui.button("Cancel").clicked() {
+                            self.show_project_modal = false;
+                            self.new_project_name.clear();
+                        }
+                    });
+                });
+        }
+
+        // Organize modal (move chat to project)
+        if self.show_organize_modal && self.current_chat_id.is_some() {
+            let chat_id_clone = self.current_chat_id.clone();
+
+            egui::Window::new("Move Chat to Project")
+                .collapsible(false)
+                .resizable(false)
+                .show(ctx, |ui| {
+                    ui.label("Select project:");
+                    ui.add_space(8.0);
+
+                    let mut selected_project: Option<Option<String>> = None;
+                    let mut should_close = false;
+
+                    if ui.button("📋 No Project (Unassigned)").clicked() {
+                        selected_project = Some(None);
+                    }
+
+                    let mut projects_vec: Vec<_> = self.projects.values().cloned().collect();
+                    projects_vec.sort_by(|a, b| a.name.cmp(&b.name));
+
+                    for project in projects_vec {
+                        if ui.button(format!("📁 {}", project.name)).clicked() {
+                            selected_project = Some(Some(project.id.clone()));
+                        }
+                    }
+
+                    ui.add_space(10.0);
+
+                    if ui.button("Cancel").clicked() {
+                        should_close = true;
+                    }
+
+                    // Handle selection after UI
+                    if let Some(project_id) = selected_project {
+                        if let Some(chat_id) = &chat_id_clone {
+                            self.move_chat_to_project(chat_id, project_id);
+                        }
+                        should_close = true;
+                    }
+
+                    if should_close {
+                        self.show_organize_modal = false;
+                    }
                 });
         }
     }

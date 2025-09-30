@@ -5,12 +5,18 @@ use crate::storage::Storage;
 use crate::theme::{Theme, ThemeType};
 use crate::tokens::{TokenCounter, TokenUsage};
 use crate::types::{
-    Chat, ChatMap, FolderMap, Message, ModelDescriptor, ProviderKeys, ProviderKind,
+    Chat, ChatMap, Message, ModelDescriptor, Project, ProjectMap, ProviderKeys, ProviderKind,
 };
 use chrono::Utc;
 use eframe::egui;
 use poll_promise::Promise;
 use std::sync::mpsc;
+
+#[derive(Clone, Copy, PartialEq)]
+pub enum ProjectModalMode {
+    Create,
+    Rename,
+}
 
 pub struct OverlookApp {
     pub api_keys: ProviderKeys,
@@ -19,13 +25,16 @@ pub struct OverlookApp {
     pub current_model: String,
     pub message_input: String,
     pub chats: ChatMap,
-    pub folders: FolderMap,
+    pub projects: ProjectMap,
+    pub current_project_id: Option<String>,
     pub available_models: Vec<ModelDescriptor>,
     pub loading_models: bool,
     pub sending_message: bool,
-    pub show_folder_modal: bool,
-    pub new_folder_name: String,
-    pub selected_folder_id: String,
+    pub show_project_modal: bool,
+    pub new_project_name: String,
+    pub project_modal_mode: ProjectModalMode,
+    pub project_modal_target_id: Option<String>,
+    pub show_organize_modal: bool,
     pub show_export_modal: bool,
     pub show_api_settings_window: bool,
     pub api_key_masked: bool,
@@ -68,13 +77,16 @@ impl Default for OverlookApp {
             current_model: String::default(),
             message_input: String::default(),
             chats: ChatMap::default(),
-            folders: FolderMap::default(),
+            projects: ProjectMap::default(),
+            current_project_id: None,
             available_models: Vec::default(),
             loading_models: bool::default(),
             sending_message: bool::default(),
-            show_folder_modal: bool::default(),
-            new_folder_name: String::default(),
-            selected_folder_id: String::default(),
+            show_project_modal: bool::default(),
+            new_project_name: String::default(),
+            project_modal_mode: ProjectModalMode::Create,
+            project_modal_target_id: None,
+            show_organize_modal: bool::default(),
             show_export_modal: bool::default(),
             show_api_settings_window: false,
             api_key_masked: true,
@@ -185,7 +197,7 @@ impl OverlookApp {
     fn load_data(&mut self) {
         self.api_keys = Storage::load_api_keys().unwrap_or_default();
         self.chats = Storage::load_chats().unwrap_or_default();
-        self.folders = Storage::load_folders().unwrap_or_default();
+        self.projects = Storage::load_projects().unwrap_or_default();
         self.font_size = Storage::load_font_size().unwrap_or(14.0);
     }
 
@@ -201,8 +213,8 @@ impl OverlookApp {
                 self.chats.len()
             );
         }
-        if let Err(e) = Storage::save_folders(&self.folders) {
-            println!("❌ Failed to save folders: {}", e);
+        if let Err(e) = Storage::save_projects(&self.projects) {
+            println!("❌ Failed to save projects: {}", e);
         }
         if let Err(e) = Storage::save_theme(&self.current_theme_type) {
             println!("❌ Failed to save theme: {}", e);
@@ -222,7 +234,7 @@ impl OverlookApp {
             messages: Vec::new(),
             model: String::new(),
             provider: self.current_provider,
-            folder: None,
+            project_id: self.current_project_id.clone(),
             created_at: now,
             updated_at: now,
         };
@@ -970,5 +982,74 @@ impl OverlookApp {
                 self.file_picker_promise = None;
             }
         }
+    }
+
+    // Project management methods
+    pub fn create_project(&mut self, name: String) {
+        if name.trim().is_empty() {
+            return;
+        }
+
+        let project = Project::new(name.trim().to_string());
+        let project_id = project.id.clone();
+        self.projects.insert(project_id.clone(), project);
+        self.current_project_id = Some(project_id);
+        self.save_data();
+    }
+
+    pub fn rename_project(&mut self, project_id: String, new_name: String) {
+        if new_name.trim().is_empty() {
+            return;
+        }
+
+        if let Some(project) = self.projects.get_mut(&project_id) {
+            project.name = new_name.trim().to_string();
+            project.updated_at = Utc::now();
+            self.save_data();
+        }
+    }
+
+    pub fn delete_project(&mut self, project_id: &str) {
+        // Unassign all chats from this project
+        for chat in self.chats.values_mut() {
+            if chat.project_id.as_ref() == Some(&project_id.to_string()) {
+                chat.project_id = None;
+            }
+        }
+
+        // Remove the project
+        self.projects.remove(project_id);
+
+        // Clear current project if it was deleted
+        if self.current_project_id.as_ref() == Some(&project_id.to_string()) {
+            self.current_project_id = None;
+        }
+
+        self.save_data();
+    }
+
+    pub fn move_chat_to_project(&mut self, chat_id: &str, project_id: Option<String>) {
+        if let Some(chat) = self.chats.get_mut(chat_id) {
+            chat.project_id = project_id;
+            chat.updated_at = Utc::now();
+            self.save_data();
+        }
+    }
+
+    pub fn get_filtered_chats(&self) -> Vec<&Chat> {
+        let mut chats: Vec<_> = self.chats.values()
+            .filter(|chat| {
+                if let Some(current_project_id) = &self.current_project_id {
+                    // Show only chats in current project
+                    chat.project_id.as_ref() == Some(current_project_id)
+                } else {
+                    // "All Chats" view - show all chats
+                    true
+                }
+            })
+            .collect();
+
+        chats.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
+        chats
     }
 }

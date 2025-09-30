@@ -1,6 +1,7 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use uuid::Uuid;
 
 #[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum ProviderKind {
@@ -101,7 +102,7 @@ pub struct Chat {
     pub model: String,
     #[serde(default)]
     pub provider: ProviderKind,
-    pub folder: Option<String>,
+    pub project_id: Option<String>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -154,5 +155,30 @@ impl From<OpenRouterModel> for ModelDescriptor {
     }
 }
 
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct Project {
+    pub id: String,
+    pub name: String,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub color: Option<String>,
+}
+
+impl Project {
+    pub fn new(name: String) -> Self {
+        let now = Utc::now();
+        Self {
+            id: Uuid::new_v4().to_string(),
+            name,
+            created_at: now,
+            updated_at: now,
+            color: None,
+        }
+    }
+}
+
 pub type ChatMap = HashMap<String, Chat>;
+pub type ProjectMap = HashMap<String, Project>;
+// Legacy type for migration
 pub type FolderMap = HashMap<String, String>;

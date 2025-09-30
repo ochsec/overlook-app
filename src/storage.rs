@@ -1,5 +1,5 @@
 use crate::theme::ThemeType;
-use crate::types::{ChatMap, FolderMap, ProviderKeys};
+use crate::types::{ChatMap, FolderMap, Project, ProjectMap, ProviderKeys};
 use anyhow::{anyhow, Context, Result};
 use base64::prelude::BASE64_STANDARD;
 use base64::Engine;
@@ -12,6 +12,7 @@ use zeroize::{Zeroize, Zeroizing};
 const SERVICE_NAME: &str = "overlook";
 const MASTER_KEY_ACCOUNT: &str = "master-key";
 const CHAT_FILE_NAME: &str = "chats.enc";
+const PROJECTS_FILE_NAME: &str = "projects.enc";
 const API_KEYS_FILE_NAME: &str = "api_keys.json";
 const VERSION_BYTE: u8 = 1;
 const AAD: &[u8] = b"overlook-v1";
@@ -85,24 +86,95 @@ impl Storage {
         Ok(())
     }
 
-    pub fn load_folders() -> Result<FolderMap> {
+    pub fn load_projects() -> Result<ProjectMap> {
         if let Some(data_dir) = dirs::config_dir() {
             let app_dir = data_dir.join("overlook");
+            let projects_path = app_dir.join(PROJECTS_FILE_NAME);
+
+            // Try loading encrypted format first
+            if let Ok(ciphertext) = std::fs::read(&projects_path) {
+                let mut key = ensure_master_key()?;
+                let plaintext = Zeroizing::new(
+                    decrypt_blob(&ciphertext, &key).context("failed to decrypt projects blob")?,
+                );
+                key.zeroize();
+
+                let projects = serde_json::from_slice(&plaintext)
+                    .context("failed to deserialize projects JSON")?;
+                return Ok(projects);
+            }
+
+            // Fall back to migrating old unencrypted projects.json
+            if let Ok(projects_data) = std::fs::read_to_string(app_dir.join("projects.json")) {
+                if let Ok(projects) = serde_json::from_str::<ProjectMap>(&projects_data) {
+                    println!("🔄 Migrating unencrypted projects.json to encrypted format...");
+                    // Save in encrypted format
+                    if let Err(e) = Self::save_projects(&projects) {
+                        eprintln!("⚠️  Failed to save encrypted projects: {}", e);
+                    } else {
+                        println!("✅ Successfully migrated projects to encrypted format");
+                        // Backup old file
+                        let _ = std::fs::rename(
+                            app_dir.join("projects.json"),
+                            app_dir.join("projects.json.backup")
+                        );
+                    }
+                    return Ok(projects);
+                }
+            }
+
+            // Fall back to migrating old folders format
             if let Ok(folders_data) = std::fs::read_to_string(app_dir.join("folders.json")) {
-                if let Ok(folders) = serde_json::from_str::<FolderMap>(&folders_data) {
-                    return Ok(folders);
+                if let Ok(old_folders) = serde_json::from_str::<FolderMap>(&folders_data) {
+                    println!("🔄 Migrating folders to encrypted projects format...");
+                    let projects = Self::migrate_folders_to_projects(old_folders);
+
+                    // Save migrated data in encrypted format
+                    if let Err(e) = Self::save_projects(&projects) {
+                        eprintln!("⚠️  Failed to save migrated projects: {}", e);
+                    } else {
+                        println!("✅ Successfully migrated {} folders to encrypted projects", projects.len());
+                        // Backup old file
+                        let _ = std::fs::rename(
+                            app_dir.join("folders.json"),
+                            app_dir.join("folders.json.backup")
+                        );
+                    }
+
+                    return Ok(projects);
                 }
             }
         }
-        Ok(FolderMap::new())
+        Ok(ProjectMap::new())
     }
 
-    pub fn save_folders(folders: &FolderMap) -> Result<()> {
+    fn migrate_folders_to_projects(folders: FolderMap) -> ProjectMap {
+        use chrono::Utc;
+        let now = Utc::now();
+        folders.into_iter()
+            .map(|(id, name)| {
+                let project = Project {
+                    id: id.clone(),
+                    name,
+                    created_at: now,
+                    updated_at: now,
+                    color: None,
+                };
+                (id, project)
+            })
+            .collect()
+    }
+
+    pub fn save_projects(projects: &ProjectMap) -> Result<()> {
         if let Some(data_dir) = dirs::config_dir() {
             let app_dir = data_dir.join("overlook");
             std::fs::create_dir_all(&app_dir)?;
-            let folders_json = serde_json::to_string_pretty(folders)?;
-            std::fs::write(app_dir.join("folders.json"), folders_json)?;
+            let mut key = ensure_master_key()?;
+            let projects_json = Zeroizing::new(serde_json::to_vec(projects)?);
+            let ciphertext =
+                encrypt_blob(&projects_json, &key).context("failed to encrypt projects JSON")?;
+            key.zeroize();
+            std::fs::write(app_dir.join(PROJECTS_FILE_NAME), ciphertext)?;
         }
         Ok(())
     }
