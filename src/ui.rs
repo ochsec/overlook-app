@@ -243,6 +243,7 @@ impl OverlookApp {
                 {
                     self.set_current_provider(provider);
                     self.current_model = model;
+                    self.refresh_token_usage_for_current_chat();
                 }
             }
 
@@ -256,6 +257,7 @@ impl OverlookApp {
         egui::CentralPanel::default().show(ctx, |ui| {
             ui.vertical(|ui| {
                 self.render_header(ui);
+                self.render_token_usage(ui);
                 ui.separator();
                 self.render_chat_area(ui);
                 ui.separator();
@@ -283,6 +285,7 @@ impl OverlookApp {
 
             if selected_provider != self.current_provider {
                 self.set_current_provider(selected_provider);
+                self.reset_token_usage();
             }
 
             ui.add_space(12.0);
@@ -306,6 +309,7 @@ impl OverlookApp {
                     .unwrap_or_else(|| self.current_model.clone())
             };
 
+            let previous_model = self.current_model.clone();
             ui.add_enabled_ui(provider_has_key, |ui| {
                 egui::ComboBox::from_id_source("model_selector")
                     .selected_text(combo_label.clone())
@@ -319,6 +323,10 @@ impl OverlookApp {
                         }
                     });
             });
+
+            if self.current_model != previous_model {
+                self.on_model_changed();
+            }
 
             if !provider_has_key {
                 ui.label(
@@ -403,6 +411,48 @@ impl OverlookApp {
                 }
             });
         });
+    }
+
+    fn render_token_usage(&self, ui: &mut egui::Ui) {
+        let has_usage = self.token_usage.prompt_tokens > 0
+            || self.token_usage.completion_tokens > 0
+            || self.token_usage.max_context_tokens.is_some();
+
+        if !has_usage {
+            return;
+        }
+
+        ui.add_space(6.0);
+        ui.group(|ui| {
+            ui.horizontal(|ui| {
+                ui.label(format!("🔼 Prompt: {}", self.token_usage.prompt_tokens));
+                ui.separator();
+                ui.label(format!(
+                    "🔽 Completion: {}",
+                    self.token_usage.completion_tokens
+                ));
+                ui.separator();
+                if let Some(max) = self.token_usage.max_context_tokens {
+                    ui.label(format!(
+                        "Total: {} / {} tokens",
+                        self.token_usage.total_tokens, max
+                    ));
+
+                    if let Some(percent) = self.token_usage.percentage_of_max() {
+                        ui.separator();
+                        ui.label(format!("{:.1}% used", percent));
+                    }
+
+                    if let Some(remaining) = self.token_usage.remaining_tokens() {
+                        ui.separator();
+                        ui.label(format!("Remaining: {}", remaining));
+                    }
+                } else {
+                    ui.label(format!("Total: {} tokens", self.token_usage.total_tokens));
+                }
+            });
+        });
+        ui.add_space(6.0);
     }
 
     fn render_chat_area(&mut self, ui: &mut egui::Ui) {

@@ -3,6 +3,7 @@ use crate::attachments::AttachmentProcessor;
 use crate::export::Exporter;
 use crate::storage::Storage;
 use crate::theme::{Theme, ThemeType};
+use crate::tokens::{TokenCounter, TokenUsage};
 use crate::types::{
     Chat, ChatMap, FolderMap, Message, ModelDescriptor, ProviderKeys, ProviderKind,
 };
@@ -48,6 +49,11 @@ pub struct OverlookApp {
     pub char_buffer: String, // Buffer for smooth character-by-character display
     pub char_display_index: usize, // Current position in character display
     pub last_char_time: std::time::Instant, // For timing character releases
+    pub token_counter: TokenCounter,
+    pub token_usage: TokenUsage,
+    pub last_request_provider: Option<ProviderKind>,
+    pub last_request_model: Option<String>,
+    pub last_model_descriptor: Option<ModelDescriptor>,
     api_client: ApiClient,
 }
 
@@ -92,6 +98,11 @@ impl Default for OverlookApp {
             char_buffer: String::new(),
             char_display_index: 0,
             last_char_time: std::time::Instant::now(),
+            token_counter: TokenCounter::default(),
+            token_usage: TokenUsage::default(),
+            last_request_provider: None,
+            last_request_model: None,
+            last_model_descriptor: None,
             api_client: ApiClient::new(),
         }
     }
@@ -140,6 +151,11 @@ impl OverlookApp {
             char_buffer: String::new(),
             char_display_index: 0,
             last_char_time: std::time::Instant::now(),
+            token_counter: TokenCounter::default(),
+            token_usage: TokenUsage::default(),
+            last_request_provider: None,
+            last_request_model: None,
+            last_model_descriptor: None,
             ..Default::default()
         };
         app.load_data();
@@ -213,6 +229,7 @@ impl OverlookApp {
 
         self.chats.insert(chat_id.clone(), chat);
         self.current_chat_id = Some(chat_id);
+        self.reset_token_usage();
         self.save_data();
     }
 
@@ -280,6 +297,157 @@ impl OverlookApp {
         }
 
         self.loading_models = false;
+        self.refresh_token_usage_for_current_chat();
+    }
+
+    fn get_model_descriptor(
+        &self,
+        provider: ProviderKind,
+        model_id: &str,
+    ) -> Option<ModelDescriptor> {
+        self.available_models
+            .iter()
+            .find(|model| model.id == model_id && model.provider == provider)
+            .cloned()
+            .or_else(|| {
+                self.available_models
+                    .iter()
+                    .find(|model| model.id == model_id)
+                    .cloned()
+            })
+    }
+
+    fn context_length_for_model(
+        &self,
+        provider: ProviderKind,
+        model_id: &str,
+        descriptor: Option<&ModelDescriptor>,
+    ) -> Option<usize> {
+        if let Some(descriptor) = descriptor {
+            if let Some(context_length) = descriptor.context_length {
+                return Some(context_length);
+            }
+        }
+
+        let normalized = model_id.to_lowercase();
+        let fallback = match provider {
+            ProviderKind::OpenAI | ProviderKind::OpenRouter => {
+                if normalized.contains("3.5") {
+                    16_385
+                } else {
+                    128_000
+                }
+            }
+            ProviderKind::Anthropic => 200_000,
+        };
+
+        Some(fallback)
+    }
+
+    fn update_context_from_descriptor(
+        &mut self,
+        provider: ProviderKind,
+        model_id: &str,
+        descriptor: Option<&ModelDescriptor>,
+    ) {
+        self.token_usage.max_context_tokens =
+            self.context_length_for_model(provider, model_id, descriptor);
+    }
+
+    pub(crate) fn refresh_token_usage_for_current_chat(&mut self) {
+        let Some(chat_id) = &self.current_chat_id else {
+            self.reset_token_usage();
+            return;
+        };
+
+        let Some(chat) = self.chats.get(chat_id) else {
+            self.reset_token_usage();
+            return;
+        };
+
+        let provider = chat.provider;
+        let model_id = chat.model.clone();
+        let messages = chat.messages.clone();
+
+        let descriptor = self
+            .get_model_descriptor(provider, &model_id)
+            .or_else(|| self.last_model_descriptor.clone());
+        self.update_context_from_descriptor(provider, &model_id, descriptor.as_ref());
+        self.last_model_descriptor = descriptor;
+        self.last_request_provider = Some(provider);
+        self.last_request_model = Some(model_id.clone());
+
+        if messages.is_empty() {
+            self.token_usage.prompt_tokens = 0;
+            self.token_usage.completion_tokens = 0;
+            self.token_usage.total_tokens = 0;
+            return;
+        }
+
+        if let Some(last_assistant_index) = messages
+            .iter()
+            .rposition(|message| message.role.eq_ignore_ascii_case("assistant"))
+        {
+            let prompt_slice = &messages[..last_assistant_index];
+            let prompt_tokens =
+                self.token_counter
+                    .count_prompt_tokens(provider, &model_id, prompt_slice);
+            let completion_tokens = self.token_counter.count_completion_tokens(
+                provider,
+                &model_id,
+                &messages[last_assistant_index].content,
+            );
+
+            self.token_usage.prompt_tokens = prompt_tokens;
+            self.token_usage.completion_tokens = completion_tokens;
+            self.token_usage.total_tokens = prompt_tokens + completion_tokens;
+        } else {
+            let prompt_tokens = self
+                .token_counter
+                .count_prompt_tokens(provider, &model_id, &messages);
+            self.token_usage.prompt_tokens = prompt_tokens;
+            self.token_usage.completion_tokens = 0;
+            self.token_usage.total_tokens = prompt_tokens;
+        }
+    }
+
+    pub(crate) fn reset_token_usage(&mut self) {
+        self.token_usage = TokenUsage::default();
+        self.last_request_provider = None;
+        self.last_request_model = None;
+        self.last_model_descriptor = None;
+    }
+
+    pub(crate) fn on_model_changed(&mut self) {
+        if self.current_model.is_empty() {
+            self.reset_token_usage();
+            return;
+        }
+
+        let mut chat_updated = false;
+
+        let provider = self.current_provider;
+        let model_id = self.current_model.clone();
+
+        if let Some(chat_id) = &self.current_chat_id {
+            if let Some(chat) = self.chats.get_mut(chat_id) {
+                chat.model = model_id.clone();
+                chat.provider = provider;
+                chat.updated_at = Utc::now();
+                chat_updated = true;
+            }
+        }
+
+        let descriptor = self
+            .get_model_descriptor(provider, &model_id)
+            .or_else(|| self.last_model_descriptor.clone());
+        self.update_context_from_descriptor(provider, &model_id, descriptor.as_ref());
+        self.last_model_descriptor = descriptor;
+        self.refresh_token_usage_for_current_chat();
+
+        if chat_updated {
+            self.save_data();
+        }
     }
 
     pub fn set_current_provider(&mut self, provider: ProviderKind) {
@@ -390,6 +558,21 @@ impl OverlookApp {
         let model = self.current_model.clone();
         let history = self.chats[&chat_id].messages.clone();
 
+        let descriptor = self
+            .get_model_descriptor(provider, &model)
+            .or_else(|| self.last_model_descriptor.clone());
+        self.last_model_descriptor = descriptor.clone();
+        self.last_request_provider = Some(provider);
+        self.last_request_model = Some(model.clone());
+        self.update_context_from_descriptor(provider, &model, descriptor.as_ref());
+
+        let prompt_tokens = self
+            .token_counter
+            .count_prompt_tokens(provider, &model, &history);
+        self.token_usage.prompt_tokens = prompt_tokens;
+        self.token_usage.completion_tokens = 0;
+        self.token_usage.total_tokens = prompt_tokens;
+
         if self.streaming_enabled {
             // Use real-time streaming with character-level smoothing
             self.streaming_active = true;
@@ -490,6 +673,7 @@ impl OverlookApp {
         self.chats.remove(chat_id);
         if self.current_chat_id.as_ref() == Some(&chat_id.to_string()) {
             self.current_chat_id = None;
+            self.reset_token_usage();
         }
         self.save_data();
     }
@@ -539,6 +723,21 @@ impl OverlookApp {
             // 4. Request repaint if we got new tokens (for immediate buffer effect)
             if received_new_tokens {
                 ctx.request_repaint();
+
+                if let Some(provider) = self.last_request_provider {
+                    let model_id = self
+                        .last_request_model
+                        .as_deref()
+                        .unwrap_or(&self.current_model);
+                    let completion_tokens = self.token_counter.count_completion_tokens(
+                        provider,
+                        model_id,
+                        &self.char_buffer,
+                    );
+                    self.token_usage.completion_tokens = completion_tokens;
+                    self.token_usage.total_tokens =
+                        self.token_usage.prompt_tokens + completion_tokens;
+                }
             }
         }
     }
@@ -619,6 +818,7 @@ impl OverlookApp {
         if persisted {
             self.save_data();
             self.streaming_message_persisted = true;
+            self.refresh_token_usage_for_current_chat();
         }
     }
 
@@ -694,6 +894,7 @@ impl OverlookApp {
                     }
 
                     self.save_data();
+                    self.refresh_token_usage_for_current_chat();
                 }
 
                 self.api_promise = None;

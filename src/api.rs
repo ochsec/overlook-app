@@ -108,11 +108,17 @@ impl ApiClient {
             .data
             .into_iter()
             .filter(|model| is_supported_openai_model(&model.id))
-            .map(|model| ModelDescriptor {
-                name: format_model_name(&model.id),
-                id: model.id,
-                description: model.owned_by.map(|owner| format!("Owned by {}", owner)),
-                provider: ProviderKind::OpenAI,
+            .map(|model| {
+                let context_length = openai_context_length(&model.id);
+                ModelDescriptor {
+                    name: format_model_name(&model.id),
+                    id: model.id.clone(),
+                    description: model.owned_by.map(|owner| format!("Owned by {}", owner)),
+                    provider: ProviderKind::OpenAI,
+                    context_length,
+                    max_output_tokens: None,
+                    tokenizer: Some(openai_tokenizer_name(&model.id)),
+                }
             })
             .collect();
 
@@ -161,9 +167,12 @@ impl ApiClient {
             .filter(|model| model.id.starts_with("claude"))
             .map(|model| ModelDescriptor {
                 name: format_model_name(&model.id),
-                id: model.id,
+                id: model.id.clone(),
                 description: None,
                 provider: ProviderKind::Anthropic,
+                context_length: anthropic_context_length(&model.id),
+                max_output_tokens: None,
+                tokenizer: Some(anthropic_tokenizer_name(&model.id)),
             })
             .collect();
 
@@ -611,6 +620,9 @@ fn fallback_openai_models() -> Vec<ModelDescriptor> {
         name: format_model_name(id),
         description: Some("Default OpenAI model".to_string()),
         provider: ProviderKind::OpenAI,
+        context_length: openai_context_length(id),
+        max_output_tokens: None,
+        tokenizer: Some(openai_tokenizer_name(id)),
     })
     .collect()
 }
@@ -627,8 +639,46 @@ fn fallback_anthropic_models() -> Vec<ModelDescriptor> {
         name: format_model_name(id),
         description: Some("Default Anthropic model".to_string()),
         provider: ProviderKind::Anthropic,
+        context_length: anthropic_context_length(id),
+        max_output_tokens: None,
+        tokenizer: Some(anthropic_tokenizer_name(id)),
     })
     .collect()
+}
+
+fn openai_context_length(model_id: &str) -> Option<usize> {
+    const DEFAULT_CONTEXT: usize = 128_000;
+    const MAPPINGS: &[(&str, usize)] = &[
+        ("gpt-3.5-turbo", 16_385),
+        ("gpt-4o-mini", 128_000),
+        ("gpt-4o", 128_000),
+        ("gpt-4.1-mini", 128_000),
+        ("gpt-4.1", 128_000),
+        ("gpt-4-turbo", 128_000),
+        ("o1-", 128_000),
+        ("o3-", 128_000),
+    ];
+
+    for (prefix, value) in MAPPINGS {
+        if model_id.starts_with(prefix) {
+            return Some(*value);
+        }
+    }
+
+    Some(DEFAULT_CONTEXT)
+}
+
+fn openai_tokenizer_name(model_id: &str) -> String {
+    model_id.to_string()
+}
+
+fn anthropic_context_length(_model_id: &str) -> Option<usize> {
+    // Claude 3 models support up to 200k context tokens.
+    Some(200_000)
+}
+
+fn anthropic_tokenizer_name(_model_id: &str) -> String {
+    "claude-3".to_string()
 }
 
 #[cfg(test)]

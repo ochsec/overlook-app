@@ -4,6 +4,7 @@ mod attachments;
 mod export;
 mod storage;
 mod theme;
+mod tokens;
 mod types;
 mod ui;
 

@@ -107,6 +107,16 @@ pub struct OpenRouterModel {
     pub id: String,
     pub name: String,
     pub description: Option<String>,
+    #[serde(default)]
+    pub architecture: Option<OpenRouterArchitecture>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, Default)]
+pub struct OpenRouterArchitecture {
+    pub tokenizer: Option<String>,
+    pub context_length: Option<usize>,
+    #[serde(alias = "max_output_length")]
+    pub max_output_tokens: Option<usize>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -120,15 +130,22 @@ pub struct ModelDescriptor {
     pub name: String,
     pub description: Option<String>,
     pub provider: ProviderKind,
+    pub context_length: Option<usize>,
+    pub max_output_tokens: Option<usize>,
+    pub tokenizer: Option<String>,
 }
 
 impl From<OpenRouterModel> for ModelDescriptor {
     fn from(value: OpenRouterModel) -> Self {
+        let architecture = value.architecture.unwrap_or_default();
         Self {
             id: value.id,
             name: value.name,
             description: value.description,
             provider: ProviderKind::OpenRouter,
+            context_length: architecture.context_length,
+            max_output_tokens: architecture.max_output_tokens,
+            tokenizer: architecture.tokenizer,
         }
     }
 }
