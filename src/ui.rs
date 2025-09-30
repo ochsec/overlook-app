@@ -554,22 +554,33 @@ impl OverlookApp {
             ui.horizontal(|ui| {
                 ui.add_space(20.0); // Left margin
 
-                let mut job = egui::text::LayoutJob::default();
-                job.append(
-                    &message.content,
-                    0.0,
-                    egui::TextFormat {
-                        color: self.current_theme.assistant_message_text,
-                        background: self.current_theme.assistant_message_bg,
-                        font_id: egui::FontId::new(self.font_size, egui::FontFamily::Proportional),
-                        ..Default::default()
-                    },
-                );
-
                 ui.allocate_ui_with_layout(
                     [ui.available_width() * 0.8, 0.0].into(),
                     egui::Layout::top_down(egui::Align::LEFT),
                     |ui| {
+                        // Show model indicator badge if available
+                        if let (Some(provider), Some(model)) = (&message.provider, &message.model) {
+                            ui.label(
+                                egui::RichText::new(format!("{}: {}", provider.display_name(), model))
+                                    .size(self.font_size * 0.75)
+                                    .color(egui::Color32::GRAY)
+                                    .italics(),
+                            );
+                            ui.add_space(2.0);
+                        }
+
+                        let mut job = egui::text::LayoutJob::default();
+                        job.append(
+                            &message.content,
+                            0.0,
+                            egui::TextFormat {
+                                color: self.current_theme.assistant_message_text,
+                                background: self.current_theme.assistant_message_bg,
+                                font_id: egui::FontId::new(self.font_size, egui::FontFamily::Proportional),
+                                ..Default::default()
+                            },
+                        );
+
                         ui.add(egui::Label::new(job).wrap().selectable(true));
                     },
                 );
@@ -585,42 +596,53 @@ impl OverlookApp {
         ui.horizontal(|ui| {
             ui.add_space(20.0); // Left margin
 
-            let mut job = egui::text::LayoutJob::default();
-            job.append(
-                &self.streaming_message,
-                0.0,
-                egui::TextFormat {
-                    color: self.current_theme.assistant_message_text,
-                    background: self.current_theme.assistant_message_bg,
-                    font_id: egui::FontId::new(self.font_size, egui::FontFamily::Proportional),
-                    ..Default::default()
-                },
-            );
-
-            // Add a blinking cursor effect only while actively streaming
-            if !self.stream_completed {
-                let time = ui.input(|i| i.time);
-                if (time * 2.0) as i32 % 2 == 0 {
-                    job.append(
-                        "▊",
-                        0.0,
-                        egui::TextFormat {
-                            color: self.current_theme.assistant_message_text,
-                            background: self.current_theme.assistant_message_bg,
-                            font_id: egui::FontId::new(
-                                self.font_size,
-                                egui::FontFamily::Proportional,
-                            ),
-                            ..Default::default()
-                        },
-                    );
-                }
-            }
-
             ui.allocate_ui_with_layout(
                 [ui.available_width() * 0.8, 0.0].into(),
                 egui::Layout::top_down(egui::Align::LEFT),
                 |ui| {
+                    // Show model indicator badge for streaming message
+                    if let (Some(provider), Some(model)) = (&self.last_request_provider, &self.last_request_model) {
+                        ui.label(
+                            egui::RichText::new(format!("{}: {}", provider.display_name(), model))
+                                .size(self.font_size * 0.75)
+                                .color(egui::Color32::GRAY)
+                                .italics(),
+                        );
+                        ui.add_space(2.0);
+                    }
+
+                    let mut job = egui::text::LayoutJob::default();
+                    job.append(
+                        &self.streaming_message,
+                        0.0,
+                        egui::TextFormat {
+                            color: self.current_theme.assistant_message_text,
+                            background: self.current_theme.assistant_message_bg,
+                            font_id: egui::FontId::new(self.font_size, egui::FontFamily::Proportional),
+                            ..Default::default()
+                        },
+                    );
+
+                    // Add a blinking cursor effect only while actively streaming
+                    if !self.stream_completed {
+                        let time = ui.input(|i| i.time);
+                        if (time * 2.0) as i32 % 2 == 0 {
+                            job.append(
+                                "▊",
+                                0.0,
+                                egui::TextFormat {
+                                    color: self.current_theme.assistant_message_text,
+                                    background: self.current_theme.assistant_message_bg,
+                                    font_id: egui::FontId::new(
+                                        self.font_size,
+                                        egui::FontFamily::Proportional,
+                                    ),
+                                    ..Default::default()
+                                },
+                            );
+                        }
+                    }
+
                     ui.add(egui::Label::new(job).wrap().selectable(true));
                 },
             );

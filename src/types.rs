@@ -87,6 +87,10 @@ pub struct Message {
     pub content: String,
     pub timestamp: DateTime<Utc>,
     pub attachments: Vec<Attachment>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub provider: Option<ProviderKind>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]

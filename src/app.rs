@@ -529,6 +529,8 @@ impl OverlookApp {
             content: self.message_input.clone(),
             timestamp: Utc::now(),
             attachments,
+            provider: None,
+            model: None,
         };
 
         // Add user message immediately - this will show in UI right away
@@ -791,6 +793,8 @@ impl OverlookApp {
                 content: final_content.clone(),
                 timestamp: Utc::now(),
                 attachments: Vec::new(),
+                provider: self.last_request_provider,
+                model: self.last_request_model.clone(),
             };
 
             let stored = if chat.messages.len() == target_index {
@@ -872,6 +876,8 @@ impl OverlookApp {
                                 content: assistant_response.clone(),
                                 timestamp: Utc::now(),
                                 attachments: Vec::new(),
+                                provider: self.last_request_provider,
+                                model: self.last_request_model.clone(),
                             };
 
                             if let Some(chat) = self.chats.get_mut(current_chat_id) {
@@ -885,6 +891,8 @@ impl OverlookApp {
                                 content: format!("Error: {}", e),
                                 timestamp: Utc::now(),
                                 attachments: Vec::new(),
+                                provider: self.last_request_provider,
+                                model: self.last_request_model.clone(),
                             };
 
                             if let Some(chat) = self.chats.get_mut(current_chat_id) {
