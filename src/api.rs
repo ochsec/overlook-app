@@ -71,6 +71,8 @@ impl ApiClient {
             ProviderKind::OpenRouter => self.load_openrouter_models(api_key).await,
             ProviderKind::OpenAI => self.load_openai_models(api_key).await,
             ProviderKind::Anthropic => self.load_anthropic_models(api_key).await,
+            ProviderKind::LMStudio => self.load_lmstudio_models(api_key).await,
+            ProviderKind::Ollama => self.load_ollama_models(api_key).await,
         }
     }
 
@@ -255,6 +257,128 @@ impl ApiClient {
         .await
     }
 
+    async fn load_lmstudio_models(&self, base_url: &str) -> Result<Vec<ModelDescriptor>> {
+        #[derive(Deserialize)]
+        struct LMStudioModelList {
+            data: Vec<LMStudioModel>,
+        }
+
+        #[derive(Deserialize)]
+        struct LMStudioModel {
+            id: String,
+        }
+
+        let base_url = base_url.trim_end_matches('/').to_string();
+        let client = self.client.clone();
+
+        Retry::spawn(Self::retry_strategy(), move || {
+            let base_url = base_url.clone();
+            let client = client.clone();
+            async move {
+                let endpoint = format!("{}/v1/models", base_url);
+                let response = client
+                    .get(&endpoint)
+                    .send()
+                    .await
+                    .map_err(|e| anyhow!(e))?;
+
+                let status = response.status();
+                if !status.is_success() {
+                    let error_text = response
+                        .text()
+                        .await
+                        .unwrap_or_else(|_| "Unknown error".to_string());
+                    let error = anyhow!("LM Studio API error {}: {}", status, error_text);
+                    if Self::is_retryable_error(&error) {
+                        eprintln!("Retrying LM Studio models request: {}", error);
+                    }
+                    return Err(error);
+                }
+
+                let mut models: Vec<ModelDescriptor> = response
+                    .json::<LMStudioModelList>()
+                    .await?
+                    .data
+                    .into_iter()
+                    .map(|model| ModelDescriptor {
+                        name: model.id.clone(),
+                        id: model.id.clone(),
+                        description: Some("LM Studio model".to_string()),
+                        provider: ProviderKind::LMStudio,
+                        context_length: Some(4096),
+                        max_output_tokens: None,
+                        tokenizer: None,
+                    })
+                    .collect();
+
+                models.sort_by(|a, b| a.name.cmp(&b.name));
+                Ok(models)
+            }
+        })
+        .await
+    }
+
+    async fn load_ollama_models(&self, base_url: &str) -> Result<Vec<ModelDescriptor>> {
+        #[derive(Deserialize)]
+        struct OllamaModelList {
+            models: Vec<OllamaModel>,
+        }
+
+        #[derive(Deserialize)]
+        struct OllamaModel {
+            name: String,
+        }
+
+        let base_url = base_url.trim_end_matches('/').to_string();
+        let client = self.client.clone();
+
+        Retry::spawn(Self::retry_strategy(), move || {
+            let base_url = base_url.clone();
+            let client = client.clone();
+            async move {
+                let endpoint = format!("{}/api/tags", base_url);
+                let response = client
+                    .get(&endpoint)
+                    .send()
+                    .await
+                    .map_err(|e| anyhow!(e))?;
+
+                let status = response.status();
+                if !status.is_success() {
+                    let error_text = response
+                        .text()
+                        .await
+                        .unwrap_or_else(|_| "Unknown error".to_string());
+                    let error = anyhow!("Ollama API error {}: {}", status, error_text);
+                    if Self::is_retryable_error(&error) {
+                        eprintln!("Retrying Ollama models request: {}", error);
+                    }
+                    return Err(error);
+                }
+
+                let mut models: Vec<ModelDescriptor> = response
+                    .json::<OllamaModelList>()
+                    .await?
+                    .models
+                    .into_iter()
+                    .map(|model| ModelDescriptor {
+                        name: model.name.clone(),
+                        id: model.name.clone(),
+                        description: Some("Ollama model".to_string()),
+                        provider: ProviderKind::Ollama,
+                        context_length: Some(4096),
+                        max_output_tokens: None,
+                        tokenizer: None,
+                    })
+                    .collect();
+
+                models.sort_by(|a, b| a.name.cmp(&b.name));
+                Ok(models)
+            }
+        })
+        .await
+    }
+
     pub async fn send_chat_message(
         &self,
         provider: ProviderKind,
@@ -266,6 +390,8 @@ impl ApiClient {
             ProviderKind::OpenRouter => self.send_openrouter_chat(api_key, model, &messages).await,
             ProviderKind::OpenAI => self.send_openai_chat(api_key, model, &messages).await,
             ProviderKind::Anthropic => self.send_anthropic_chat(api_key, model, &messages).await,
+            ProviderKind::LMStudio => self.send_lmstudio_chat(api_key, model, &messages).await,
+            ProviderKind::Ollama => self.send_ollama_chat(api_key, model, &messages).await,
         }
     }
 
@@ -422,6 +548,123 @@ impl ApiClient {
         .await
     }
 
+    async fn send_lmstudio_chat(
+        &self,
+        base_url: &str,
+        model: &str,
+        messages: &[Message],
+    ) -> Result<String> {
+        let base_url = base_url.trim_end_matches('/').to_string();
+        let model = model.to_string();
+        let messages = messages.to_vec();
+        let client = self.client.clone();
+
+        Retry::spawn(Self::retry_strategy(), move || {
+            let base_url = base_url.clone();
+            let model = model.clone();
+            let messages = messages.clone();
+            let client = client.clone();
+            async move {
+                let endpoint = format!("{}/v1/chat/completions", base_url);
+                let request_body = json!({
+                    "model": model,
+                    "messages": openai_style_messages(&messages),
+                    "temperature": 0.7
+                });
+
+                let response = client
+                    .post(&endpoint)
+                    .header("Content-Type", "application/json")
+                    .json(&request_body)
+                    .send()
+                    .await
+                    .map_err(|e| anyhow!(e))?;
+
+                let status = response.status();
+                if !status.is_success() {
+                    let error_text = response
+                        .text()
+                        .await
+                        .unwrap_or_else(|_| "Unknown error".to_string());
+                    let error = anyhow!("LM Studio chat error {}: {}", status, error_text);
+                    if Self::is_retryable_error(&error) {
+                        eprintln!("Retrying LM Studio chat request: {}", error);
+                    }
+                    return Err(error);
+                }
+
+                extract_openai_style_response(response.json().await?)
+            }
+        })
+        .await
+    }
+
+    async fn send_ollama_chat(
+        &self,
+        base_url: &str,
+        model: &str,
+        messages: &[Message],
+    ) -> Result<String> {
+        let base_url = base_url.trim_end_matches('/').to_string();
+        let model = model.to_string();
+        let messages = messages.to_vec();
+        let client = self.client.clone();
+
+        Retry::spawn(Self::retry_strategy(), move || {
+            let base_url = base_url.clone();
+            let model = model.clone();
+            let messages = messages.clone();
+            let client = client.clone();
+            async move {
+                let endpoint = format!("{}/api/chat", base_url);
+
+                // Convert messages to Ollama format
+                let ollama_messages: Vec<Value> = messages.iter().map(|m| {
+                    json!({
+                        "role": m.role,
+                        "content": m.content
+                    })
+                }).collect();
+
+                let request_body = json!({
+                    "model": model,
+                    "messages": ollama_messages,
+                    "stream": false
+                });
+
+                let response = client
+                    .post(&endpoint)
+                    .header("Content-Type", "application/json")
+                    .json(&request_body)
+                    .send()
+                    .await
+                    .map_err(|e| anyhow!(e))?;
+
+                let status = response.status();
+                if !status.is_success() {
+                    let error_text = response
+                        .text()
+                        .await
+                        .unwrap_or_else(|_| "Unknown error".to_string());
+                    let error = anyhow!("Ollama chat error {}: {}", status, error_text);
+                    if Self::is_retryable_error(&error) {
+                        eprintln!("Retrying Ollama chat request: {}", error);
+                    }
+                    return Err(error);
+                }
+
+                let data: Value = response.json().await?;
+                // Ollama returns the response in data["message"]["content"]
+                if let Some(content) = data["message"]["content"].as_str() {
+                    Ok(content.to_string())
+                } else {
+                    Err(anyhow!("Invalid Ollama response format"))
+                }
+            }
+        })
+        .await
+    }
+
     pub async fn stream_chat_completion(
         &self,
         provider: ProviderKind,
@@ -430,6 +673,183 @@ impl ApiClient {
         messages: Vec<Message>,
     ) -> Result<BoxStream<'static, StreamItem>> {
         match provider {
+            ProviderKind::LMStudio => {
+                let base_url = api_key.trim_end_matches('/').to_string();
+                let model = model.to_string();
+                let client = self.client.clone();
+
+                // Retry the initial connection with backoff
+                let response = Retry::spawn(Self::retry_strategy(), move || {
+                    let base_url = base_url.clone();
+                    let model = model.clone();
+                    let messages = messages.clone();
+                    let client = client.clone();
+                    async move {
+                        let endpoint = format!("{}/v1/chat/completions", base_url);
+                        let request_body = json!({
+                            "model": model,
+                            "messages": openai_style_messages(&messages),
+                            "temperature": 0.7,
+                            "stream": true
+                        });
+
+                        let response = client
+                            .post(&endpoint)
+                            .header("Content-Type", "application/json")
+                            .json(&request_body)
+                            .send()
+                            .await
+                            .map_err(|e| anyhow!(e))?;
+
+                        let status = response.status();
+                        if !status.is_success() {
+                            let error_text = response
+                                .text()
+                                .await
+                                .unwrap_or_else(|_| "Unknown error".to_string());
+                            let error = anyhow!(
+                                "LM Studio streaming error {}: {}",
+                                status,
+                                error_text
+                            );
+                            if Self::is_retryable_error(&error) {
+                                eprintln!("Retrying LM Studio streaming connection: {}", error);
+                            }
+                            return Err(error);
+                        }
+
+                        Ok(response)
+                    }
+                })
+                .await?;
+
+                let stream = response
+                    .bytes_stream()
+                    .eventsource()
+                    .filter_map(|event| async move {
+                        match event {
+                            Ok(event) => {
+                                if event.data == "[DONE]" {
+                                    return None;
+                                }
+
+                                match serde_json::from_str::<Value>(&event.data) {
+                                    Ok(parsed) => extract_openai_stream_chunk(&parsed),
+                                    Err(e) => {
+                                        eprintln!(
+                                            "Failed to parse LM Studio SSE JSON: {} for data: {}",
+                                            e, event.data
+                                        );
+                                        None
+                                    }
+                                }
+                            }
+                            Err(e) => Some(Err(anyhow!("LM Studio stream error: {}", e))),
+                        }
+                    })
+                    .boxed();
+
+                Ok(stream)
+            }
+            ProviderKind::Ollama => {
+                let base_url = api_key.trim_end_matches('/').to_string();
+                let model = model.to_string();
+                let client = self.client.clone();
+
+                // Retry the initial connection with backoff
+                let response = Retry::spawn(Self::retry_strategy(), move || {
+                    let base_url = base_url.clone();
+                    let model = model.clone();
+                    let messages = messages.clone();
+                    let client = client.clone();
+                    async move {
+                        let endpoint = format!("{}/api/chat", base_url);
+
+                        // Convert messages to Ollama format
+                        let ollama_messages: Vec<Value> = messages.iter().map(|m| {
+                            json!({
+                                "role": m.role,
+                                "content": m.content
+                            })
+                        }).collect();
+
+                        let request_body = json!({
+                            "model": model,
+                            "messages": ollama_messages,
+                            "stream": true
+                        });
+
+                        let response = client
+                            .post(&endpoint)
+                            .header("Content-Type", "application/json")
+                            .json(&request_body)
+                            .send()
+                            .await
+                            .map_err(|e| anyhow!(e))?;
+
+                        let status = response.status();
+                        if !status.is_success() {
+                            let error_text = response
+                                .text()
+                                .await
+                                .unwrap_or_else(|_| "Unknown error".to_string());
+                            let error = anyhow!(
+                                "Ollama streaming error {}: {}",
+                                status,
+                                error_text
+                            );
+                            if Self::is_retryable_error(&error) {
+                                eprintln!("Retrying Ollama streaming connection: {}", error);
+                            }
+                            return Err(error);
+                        }
+
+                        Ok(response)
+                    }
+                })
+                .await?;
+
+                let stream = response
+                    .bytes_stream()
+                    .filter_map(|result| async move {
+                        match result {
+                            Ok(bytes) => {
+                                // Ollama streams newline-delimited JSON
+                                let text = String::from_utf8_lossy(&bytes);
+                                for line in text.lines() {
+                                    if line.trim().is_empty() {
+                                        continue;
+                                    }
+                                    match serde_json::from_str::<Value>(line) {
+                                        Ok(parsed) => {
+                                            // Check if stream is done
+                                            if parsed["done"].as_bool() == Some(true) {
+                                                return None;
+                                            }
+                                            // Extract content from message
+                                            if let Some(content) = parsed["message"]["content"].as_str() {
+                                                if !content.is_empty() {
+                                                    return Some(Ok(content.to_string()));
+                                                }
+                                            }
+                                        }
+                                        Err(e) => {
+                                            eprintln!(
+                                                "Failed to parse Ollama stream JSON: {} for line: {}",
+                                                e, line
+                                            );
+                                        }
+                                    }
+                                }
+                                None
+                            }
+                            Err(e) => Some(Err(anyhow!("Ollama stream error: {}", e))),
+                        }
+                    })
+                    .boxed();
+
+                Ok(stream)
+            }
             ProviderKind::OpenRouter => {
                 let api_key = api_key.to_string();
                 let model = model.to_string();

@@ -351,6 +351,7 @@ impl OverlookApp {
                 }
             }
             ProviderKind::Anthropic => 200_000,
+            ProviderKind::LMStudio | ProviderKind::Ollama => 4_096,
         };
 
         Some(fallback)

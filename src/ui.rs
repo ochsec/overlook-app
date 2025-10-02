@@ -31,11 +31,11 @@ impl eframe::App for OverlookApp {
 impl OverlookApp {
     fn render_menu_bar(&mut self, ctx: &egui::Context) {
         egui::TopBottomPanel::top("menu_bar").show(ctx, |ui| {
-            egui::menu::bar(ui, |ui| {
+            egui::MenuBar::new().ui(ui, |ui| {
                 ui.menu_button("Settings", |ui| {
                     if ui.button("API Keys…").clicked() {
                         self.show_api_settings_window = true;
-                        ui.close_menu();
+                        ui.close();
                     }
                 });
             });
@@ -52,8 +52,10 @@ impl OverlookApp {
 
         let builder = ViewportBuilder::default()
             .with_title("API Keys")
-            .with_inner_size([420.0, 240.0])
-            .with_min_inner_size([360.0, 200.0]);
+            .with_inner_size([450.0, 400.0])
+            .with_min_inner_size([400.0, 250.0])
+            .with_max_inner_size([600.0, 500.0])
+            .with_resizable(true);
 
         ctx.show_viewport_immediate(viewport_id, builder, |api_ctx, class| match class {
             ViewportClass::Immediate | ViewportClass::Deferred | ViewportClass::Root => {
@@ -69,7 +71,7 @@ impl OverlookApp {
 
                 egui::Window::new("API Keys")
                     .open(&mut open)
-                    .resizable(false)
+                    .resizable(true)
                     .collapsible(false)
                     .show(api_ctx, |ui| {
                         should_close = self.render_api_settings_ui(ui);
@@ -103,29 +105,52 @@ impl OverlookApp {
         ui.label("Keys are stored locally on this device.");
         ui.add_space(12.0);
 
-        self.render_api_key_section(
-            ui,
-            ProviderKind::OpenRouter,
-            "OpenRouter",
-            "Enter OpenRouter API key",
-        );
+        egui::ScrollArea::vertical()
+            .auto_shrink([false; 2])
+            .show(ui, |ui| {
+                self.render_api_key_section(
+                    ui,
+                    ProviderKind::OpenRouter,
+                    "OpenRouter",
+                    "Enter OpenRouter API key",
+                );
+
+                ui.add_space(12.0);
+
+                self.render_api_key_section(ui, ProviderKind::OpenAI, "OpenAI", "Enter OpenAI API key");
+
+                ui.add_space(12.0);
+
+                self.render_api_key_section(
+                    ui,
+                    ProviderKind::Anthropic,
+                    "Anthropic",
+                    "Enter Anthropic API key",
+                );
+
+                ui.add_space(12.0);
+
+                self.render_api_key_section(
+                    ui,
+                    ProviderKind::LMStudio,
+                    "LM Studio",
+                    "Enter LM Studio URL (e.g., http://localhost:1234)",
+                );
+
+                ui.add_space(12.0);
+
+                self.render_api_key_section(
+                    ui,
+                    ProviderKind::Ollama,
+                    "Ollama",
+                    "Enter Ollama URL (e.g., http://localhost:11434)",
+                );
+
+                ui.add_space(12.0);
+                ui.label("Updates sync immediately once you edit a key.");
+            });
 
         ui.add_space(12.0);
-
-        self.render_api_key_section(ui, ProviderKind::OpenAI, "OpenAI", "Enter OpenAI API key");
-
-        ui.add_space(12.0);
-
-        self.render_api_key_section(
-            ui,
-            ProviderKind::Anthropic,
-            "Anthropic",
-            "Enter Anthropic API key",
-        );
-
-        ui.add_space(12.0);
-        ui.label("Updates sync immediately once you edit a key.");
-        ui.add_space(18.0);
 
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             if ui.button("Close").clicked() {
@@ -149,16 +174,20 @@ impl OverlookApp {
                 ui.add_space(4.0);
                 ui.horizontal(|ui| {
                     let key_ref = self.api_keys.get_mut(provider);
+                    // Don't mask URLs for local providers
+                    let should_mask = matches!(provider, ProviderKind::OpenRouter | ProviderKind::OpenAI | ProviderKind::Anthropic);
                     let response = ui.add(
                         egui::TextEdit::singleline(key_ref)
                             .hint_text(hint)
                             .desired_width(f32::INFINITY)
-                            .password(self.api_key_masked),
+                            .password(should_mask && self.api_key_masked),
                     );
 
-                    let toggle_label = if self.api_key_masked { "Show" } else { "Hide" };
-                    if ui.button(toggle_label).clicked() {
-                        self.api_key_masked = !self.api_key_masked;
+                    if should_mask {
+                        let toggle_label = if self.api_key_masked { "Show" } else { "Hide" };
+                        if ui.button(toggle_label).clicked() {
+                            self.api_key_masked = !self.api_key_masked;
+                        }
                     }
 
                     if response.changed() {
@@ -357,7 +386,7 @@ impl OverlookApp {
             ui.label("Provider:");
 
             let mut selected_provider = self.current_provider;
-            egui::ComboBox::from_id_source("provider_selector")
+            egui::ComboBox::from_id_salt("provider_selector")
                 .selected_text(self.current_provider.display_name())
                 .show_ui(ui, |ui| {
                     for provider in ProviderKind::all() {
@@ -397,7 +426,7 @@ impl OverlookApp {
 
             let previous_model = self.current_model.clone();
             ui.add_enabled_ui(provider_has_key, |ui| {
-                egui::ComboBox::from_id_source("model_selector")
+                egui::ComboBox::from_id_salt("model_selector")
                     .selected_text(combo_label.clone())
                     .show_ui(ui, |ui| {
                         for model in &self.available_models {
@@ -445,7 +474,7 @@ impl OverlookApp {
                 ui.separator();
                 ui.label("Theme:");
                 let before_theme = self.current_theme_type;
-                egui::ComboBox::from_id_source("theme_selector")
+                egui::ComboBox::from_id_salt("theme_selector")
                     .selected_text(self.current_theme_type.name())
                     .show_ui(ui, |ui| {
                         for theme_type in ThemeType::all_themes() {

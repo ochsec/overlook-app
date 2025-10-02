@@ -8,6 +8,8 @@ pub enum ProviderKind {
     OpenRouter,
     OpenAI,
     Anthropic,
+    LMStudio,
+    Ollama,
 }
 
 impl ProviderKind {
@@ -17,6 +19,8 @@ impl ProviderKind {
             ProviderKind::OpenRouter => "openrouter",
             ProviderKind::OpenAI => "openai",
             ProviderKind::Anthropic => "anthropic",
+            ProviderKind::LMStudio => "lmstudio",
+            ProviderKind::Ollama => "ollama",
         }
     }
 
@@ -25,14 +29,18 @@ impl ProviderKind {
             ProviderKind::OpenRouter => "OpenRouter",
             ProviderKind::OpenAI => "OpenAI",
             ProviderKind::Anthropic => "Anthropic",
+            ProviderKind::LMStudio => "LM Studio",
+            ProviderKind::Ollama => "Ollama",
         }
     }
 
-    pub fn all() -> [ProviderKind; 3] {
+    pub fn all() -> [ProviderKind; 5] {
         [
             ProviderKind::OpenRouter,
             ProviderKind::OpenAI,
             ProviderKind::Anthropic,
+            ProviderKind::LMStudio,
+            ProviderKind::Ollama,
         ]
     }
 }
@@ -48,6 +56,10 @@ pub struct ProviderKeys {
     pub openrouter: String,
     pub openai: String,
     pub anthropic: String,
+    #[serde(default)]
+    pub lmstudio_url: String,
+    #[serde(default)]
+    pub ollama_url: String,
 }
 
 impl ProviderKeys {
@@ -56,6 +68,8 @@ impl ProviderKeys {
             ProviderKind::OpenRouter => &self.openrouter,
             ProviderKind::OpenAI => &self.openai,
             ProviderKind::Anthropic => &self.anthropic,
+            ProviderKind::LMStudio => &self.lmstudio_url,
+            ProviderKind::Ollama => &self.ollama_url,
         }
     }
 
@@ -64,6 +78,8 @@ impl ProviderKeys {
             ProviderKind::OpenRouter => &mut self.openrouter,
             ProviderKind::OpenAI => &mut self.openai,
             ProviderKind::Anthropic => &mut self.anthropic,
+            ProviderKind::LMStudio => &mut self.lmstudio_url,
+            ProviderKind::Ollama => &mut self.ollama_url,
         }
     }
 }

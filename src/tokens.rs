@@ -138,6 +138,9 @@ fn candidate_model_names(provider: ProviderKind, model: &str) -> Vec<String> {
             names.push("gpt-4o".to_string());
             names.push("claude-3-opus-20240229".to_string());
         }
+        ProviderKind::LMStudio | ProviderKind::Ollama => {
+            // Local providers don't need default model names for completion
+        }
     }
 
     names.sort();
