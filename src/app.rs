@@ -18,6 +18,14 @@ pub enum ProjectModalMode {
     Rename,
 }
 
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub enum ViewMode {
+    Chat,
+    Settings,
+    Export,
+    Organize,
+}
+
 pub struct OverlookApp {
     pub api_keys: ProviderKeys,
     pub current_chat_id: Option<String>,
@@ -34,9 +42,7 @@ pub struct OverlookApp {
     pub new_project_name: String,
     pub project_modal_mode: ProjectModalMode,
     pub project_modal_target_id: Option<String>,
-    pub show_organize_modal: bool,
-    pub show_export_modal: bool,
-    pub show_api_settings_window: bool,
+    pub current_view: ViewMode,
     pub api_key_masked: bool,
     pub rt: Option<tokio::runtime::Runtime>,
     pub api_promise: Option<Promise<Result<String, String>>>,
@@ -86,9 +92,7 @@ impl Default for OverlookApp {
             new_project_name: String::default(),
             project_modal_mode: ProjectModalMode::Create,
             project_modal_target_id: None,
-            show_organize_modal: bool::default(),
-            show_export_modal: bool::default(),
-            show_api_settings_window: false,
+            current_view: ViewMode::Chat,
             api_key_masked: true,
             rt: None,
             api_promise: None,

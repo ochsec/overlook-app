@@ -1,7 +1,7 @@
-use crate::app::OverlookApp;
+use crate::app::{OverlookApp, ViewMode};
 use crate::theme::{Theme, ThemeType};
 use crate::types::ProviderKind;
-use eframe::egui::{self, ViewportBuilder, ViewportClass, ViewportCommand, ViewportId};
+use eframe::egui;
 
 impl eframe::App for OverlookApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
@@ -18,7 +18,6 @@ impl eframe::App for OverlookApp {
         self.handle_file_picker_response();
 
         self.render_menu_bar(ctx);
-        self.render_api_settings_window(ctx);
         self.render_sidebar(ctx);
         self.render_main_content(ctx);
         self.render_modals(ctx);
@@ -32,9 +31,21 @@ impl OverlookApp {
     fn render_menu_bar(&mut self, ctx: &egui::Context) {
         egui::TopBottomPanel::top("menu_bar").show(ctx, |ui| {
             egui::MenuBar::new().ui(ui, |ui| {
-                ui.menu_button("Settings", |ui| {
-                    if ui.button("API Keys…").clicked() {
-                        self.show_api_settings_window = true;
+                ui.menu_button("View", |ui| {
+                    if ui.selectable_label(self.current_view == ViewMode::Chat, "💬 Chat").clicked() {
+                        self.current_view = ViewMode::Chat;
+                        ui.close();
+                    }
+                    if ui.selectable_label(self.current_view == ViewMode::Settings, "⚙️ Settings").clicked() {
+                        self.current_view = ViewMode::Settings;
+                        ui.close();
+                    }
+                    if ui.selectable_label(self.current_view == ViewMode::Export, "📥 Export").clicked() {
+                        self.current_view = ViewMode::Export;
+                        ui.close();
+                    }
+                    if ui.selectable_label(self.current_view == ViewMode::Organize, "📁 Organize").clicked() {
+                        self.current_view = ViewMode::Organize;
                         ui.close();
                     }
                 });
@@ -42,124 +53,6 @@ impl OverlookApp {
         });
     }
 
-    fn render_api_settings_window(&mut self, ctx: &egui::Context) {
-        let viewport_id = ViewportId::from_hash_of("api_settings_window");
-
-        if !self.show_api_settings_window {
-            ctx.send_viewport_cmd_to(viewport_id, ViewportCommand::Close);
-            return;
-        }
-
-        let builder = ViewportBuilder::default()
-            .with_title("API Keys")
-            .with_inner_size([450.0, 400.0])
-            .with_min_inner_size([400.0, 250.0])
-            .with_max_inner_size([600.0, 500.0])
-            .with_resizable(true);
-
-        ctx.show_viewport_immediate(viewport_id, builder, |api_ctx, class| match class {
-            ViewportClass::Immediate | ViewportClass::Deferred | ViewportClass::Root => {
-                self.render_api_settings_panel(api_ctx);
-
-                if api_ctx.input(|i| i.viewport().close_requested()) {
-                    self.show_api_settings_window = false;
-                }
-            }
-            ViewportClass::Embedded => {
-                let mut open = true;
-                let mut should_close = false;
-
-                egui::Window::new("API Keys")
-                    .open(&mut open)
-                    .resizable(true)
-                    .collapsible(false)
-                    .show(api_ctx, |ui| {
-                        should_close = self.render_api_settings_ui(ui);
-                    });
-
-                if api_ctx.input(|i| i.viewport().close_requested()) || !open || should_close {
-                    self.show_api_settings_window = false;
-                }
-            }
-        });
-    }
-
-    fn render_api_settings_panel(&mut self, ctx: &egui::Context) {
-        let mut should_close = false;
-
-        egui::CentralPanel::default().show(ctx, |ui| {
-            should_close = self.render_api_settings_ui(ui);
-        });
-
-        if should_close {
-            self.show_api_settings_window = false;
-            ctx.send_viewport_cmd(ViewportCommand::Close);
-        }
-    }
-
-    fn render_api_settings_ui(&mut self, ui: &mut egui::Ui) -> bool {
-        let mut should_close = false;
-
-        ui.heading("Provider API Keys");
-        ui.add_space(6.0);
-        ui.label("Keys are stored locally on this device.");
-        ui.add_space(12.0);
-
-        egui::ScrollArea::vertical()
-            .auto_shrink([false; 2])
-            .show(ui, |ui| {
-                self.render_api_key_section(
-                    ui,
-                    ProviderKind::OpenRouter,
-                    "OpenRouter",
-                    "Enter OpenRouter API key",
-                );
-
-                ui.add_space(12.0);
-
-                self.render_api_key_section(ui, ProviderKind::OpenAI, "OpenAI", "Enter OpenAI API key");
-
-                ui.add_space(12.0);
-
-                self.render_api_key_section(
-                    ui,
-                    ProviderKind::Anthropic,
-                    "Anthropic",
-                    "Enter Anthropic API key",
-                );
-
-                ui.add_space(12.0);
-
-                self.render_api_key_section(
-                    ui,
-                    ProviderKind::LMStudio,
-                    "LM Studio",
-                    "Enter LM Studio URL (e.g., http://localhost:1234)",
-                );
-
-                ui.add_space(12.0);
-
-                self.render_api_key_section(
-                    ui,
-                    ProviderKind::Ollama,
-                    "Ollama",
-                    "Enter Ollama URL (e.g., http://localhost:11434)",
-                );
-
-                ui.add_space(12.0);
-                ui.label("Updates sync immediately once you edit a key.");
-            });
-
-        ui.add_space(12.0);
-
-        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            if ui.button("Close").clicked() {
-                should_close = true;
-            }
-        });
-
-        should_close
-    }
 
     fn render_api_key_section(
         &mut self,
@@ -218,7 +111,7 @@ impl OverlookApp {
                     ui.heading("OpenRouter Chat");
                     ui.separator();
 
-                    ui.label("Configure provider API keys from Settings → API Keys…");
+                    ui.label("Configure provider API keys from View → Settings");
                     ui.separator();
 
                     // New Chat button
@@ -370,14 +263,27 @@ impl OverlookApp {
 
     fn render_main_content(&mut self, ctx: &egui::Context) {
         egui::CentralPanel::default().show(ctx, |ui| {
-            ui.vertical(|ui| {
-                self.render_header(ui);
-                self.render_token_usage(ui);
-                ui.separator();
-                self.render_chat_area(ui);
-                ui.separator();
-                self.render_input_area(ui, ctx);
-            });
+            match self.current_view {
+                ViewMode::Chat => {
+                    ui.vertical(|ui| {
+                        self.render_header(ui);
+                        self.render_token_usage(ui);
+                        ui.separator();
+                        self.render_chat_area(ui);
+                        ui.separator();
+                        self.render_input_area(ui, ctx);
+                    });
+                }
+                ViewMode::Settings => {
+                    self.render_settings_view(ui);
+                }
+                ViewMode::Export => {
+                    self.render_export_view(ui);
+                }
+                ViewMode::Organize => {
+                    self.render_organize_view(ui);
+                }
+            }
         });
     }
 
@@ -445,7 +351,7 @@ impl OverlookApp {
 
             if !provider_has_key {
                 ui.label(
-                    egui::RichText::new("← add a key")
+                    egui::RichText::new("← add a key in Settings")
                         .italics()
                         .color(egui::Color32::GRAY),
                 );
@@ -460,71 +366,6 @@ impl OverlookApp {
             {
                 self.load_models();
             }
-
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if ui.button("📥 Export").clicked() {
-                    self.show_export_modal = true;
-                }
-
-                if ui.button("📁 Organize").clicked() {
-                    self.show_organize_modal = true;
-                }
-
-                // Theme selector
-                ui.separator();
-                ui.label("Theme:");
-                let before_theme = self.current_theme_type;
-                egui::ComboBox::from_id_salt("theme_selector")
-                    .selected_text(self.current_theme_type.name())
-                    .show_ui(ui, |ui| {
-                        for theme_type in ThemeType::all_themes() {
-                            ui.selectable_value(
-                                &mut self.current_theme_type,
-                                theme_type,
-                                theme_type.name(),
-                            );
-                        }
-                    });
-
-                // Font size control
-                ui.separator();
-                ui.label("Font Size:");
-                let before_font_size = self.font_size;
-                ui.add(egui::Slider::new(&mut self.font_size, 10.0..=20.0).suffix("pt"));
-
-                // Streaming toggle
-                ui.separator();
-                ui.checkbox(&mut self.streaming_enabled, "🔄 Stream");
-
-                // Check if theme or font size changed
-                let theme_changed = self.current_theme_type != before_theme;
-                let font_changed = (self.font_size - before_font_size).abs() > 0.1;
-
-                if theme_changed || font_changed {
-                    if theme_changed {
-                        println!(
-                            "Theme changed from {:?} to {:?}",
-                            before_theme, self.current_theme_type
-                        );
-                        self.current_theme = Theme::from_theme_type(&self.current_theme_type);
-                    }
-                    if font_changed {
-                        println!("Font size changed to: {:.1}pt", self.font_size);
-                    }
-
-                    // Force complete style refresh by setting to default first, then applying theme
-                    ui.ctx().set_style(egui::Style::default());
-                    ui.ctx().style_mut(|style| {
-                        self.current_theme
-                            .apply_to_egui_style(style, self.font_size);
-                    });
-
-                    self.save_data();
-
-                    // Request repaint to ensure changes are visible immediately
-                    ui.ctx().request_repaint();
-                }
-            });
         });
     }
 
@@ -848,26 +689,7 @@ impl OverlookApp {
     }
 
     fn render_modals(&mut self, ctx: &egui::Context) {
-        // Export modal
-        if self.show_export_modal {
-            egui::Window::new("Export Chat")
-                .collapsible(false)
-                .resizable(false)
-                .show(ctx, |ui| {
-                    ui.horizontal(|ui| {
-                        if ui.button("Export Current Chat").clicked() {
-                            self.export_current_chat();
-                            self.show_export_modal = false;
-                        }
-
-                        if ui.button("Cancel").clicked() {
-                            self.show_export_modal = false;
-                        }
-                    });
-                });
-        }
-
-        // Project modal
+        // Project modal (keep this as it's still used in the sidebar)
         if self.show_project_modal {
             let title = match self.project_modal_mode {
                 crate::app::ProjectModalMode::Create => "New Project",
@@ -927,52 +749,173 @@ impl OverlookApp {
                     });
                 });
         }
+    }
 
-        // Organize modal (move chat to project)
-        if self.show_organize_modal && self.current_chat_id.is_some() {
-            let chat_id_clone = self.current_chat_id.clone();
+    fn render_settings_view(&mut self, ui: &mut egui::Ui) {
+        ui.heading("Settings");
+        ui.add_space(12.0);
 
-            egui::Window::new("Move Chat to Project")
-                .collapsible(false)
-                .resizable(false)
-                .show(ctx, |ui| {
-                    ui.label("Select project:");
-                    ui.add_space(8.0);
+        egui::ScrollArea::vertical()
+            .auto_shrink([false; 2])
+            .show(ui, |ui| {
+                // API Keys Section
+                ui.group(|ui| {
+                    ui.heading("Provider API Keys");
+                    ui.add_space(6.0);
+                    ui.label("Keys are stored locally on this device.");
+                    ui.add_space(12.0);
 
-                    let mut selected_project: Option<Option<String>> = None;
-                    let mut should_close = false;
+                    self.render_api_key_section(
+                        ui,
+                        ProviderKind::OpenRouter,
+                        "OpenRouter",
+                        "Enter OpenRouter API key",
+                    );
 
-                    if ui.button("📋 No Project (Unassigned)").clicked() {
-                        selected_project = Some(None);
-                    }
+                    ui.add_space(12.0);
 
-                    let mut projects_vec: Vec<_> = self.projects.values().cloned().collect();
-                    projects_vec.sort_by(|a, b| a.name.cmp(&b.name));
+                    self.render_api_key_section(ui, ProviderKind::OpenAI, "OpenAI", "Enter OpenAI API key");
 
-                    for project in projects_vec {
-                        if ui.button(format!("📁 {}", project.name)).clicked() {
-                            selected_project = Some(Some(project.id.clone()));
-                        }
-                    }
+                    ui.add_space(12.0);
 
-                    ui.add_space(10.0);
+                    self.render_api_key_section(
+                        ui,
+                        ProviderKind::Anthropic,
+                        "Anthropic",
+                        "Enter Anthropic API key",
+                    );
 
-                    if ui.button("Cancel").clicked() {
-                        should_close = true;
-                    }
+                    ui.add_space(12.0);
 
-                    // Handle selection after UI
-                    if let Some(project_id) = selected_project {
-                        if let Some(chat_id) = &chat_id_clone {
-                            self.move_chat_to_project(chat_id, project_id);
-                        }
-                        should_close = true;
-                    }
+                    self.render_api_key_section(
+                        ui,
+                        ProviderKind::LMStudio,
+                        "LM Studio",
+                        "Enter LM Studio URL (e.g., http://localhost:1234)",
+                    );
 
-                    if should_close {
-                        self.show_organize_modal = false;
-                    }
+                    ui.add_space(12.0);
+
+                    self.render_api_key_section(
+                        ui,
+                        ProviderKind::Ollama,
+                        "Ollama",
+                        "Enter Ollama URL (e.g., http://localhost:11434)",
+                    );
+
+                    ui.add_space(12.0);
+                    ui.label("Updates sync immediately once you edit a key.");
                 });
+
+                ui.add_space(20.0);
+
+                // Appearance Section
+                ui.group(|ui| {
+                    ui.heading("Appearance");
+                    ui.add_space(12.0);
+
+                    ui.horizontal(|ui| {
+                        ui.label("Theme:");
+                        let before_theme = self.current_theme_type;
+                        egui::ComboBox::from_id_salt("settings_theme_selector")
+                            .selected_text(self.current_theme_type.name())
+                            .show_ui(ui, |ui| {
+                                for theme_type in ThemeType::all_themes() {
+                                    ui.selectable_value(
+                                        &mut self.current_theme_type,
+                                        theme_type,
+                                        theme_type.name(),
+                                    );
+                                }
+                            });
+
+                        if self.current_theme_type != before_theme {
+                            self.current_theme = Theme::from_theme_type(&self.current_theme_type);
+                            ui.ctx().set_style(egui::Style::default());
+                            ui.ctx().style_mut(|style| {
+                                self.current_theme.apply_to_egui_style(style, self.font_size);
+                            });
+                            self.save_data();
+                            ui.ctx().request_repaint();
+                        }
+                    });
+
+                    ui.add_space(12.0);
+
+                    ui.horizontal(|ui| {
+                        ui.label("Font Size:");
+                        let before_font_size = self.font_size;
+                        ui.add(egui::Slider::new(&mut self.font_size, 10.0..=20.0).suffix("pt"));
+
+                        if (self.font_size - before_font_size).abs() > 0.1 {
+                            ui.ctx().set_style(egui::Style::default());
+                            ui.ctx().style_mut(|style| {
+                                self.current_theme.apply_to_egui_style(style, self.font_size);
+                            });
+                            self.save_data();
+                            ui.ctx().request_repaint();
+                        }
+                    });
+                });
+
+                ui.add_space(20.0);
+
+                // Streaming Section
+                ui.group(|ui| {
+                    ui.heading("Chat Behavior");
+                    ui.add_space(12.0);
+                    ui.checkbox(&mut self.streaming_enabled, "Enable streaming responses");
+                });
+            });
+    }
+
+    fn render_export_view(&mut self, ui: &mut egui::Ui) {
+        ui.heading("Export");
+        ui.add_space(12.0);
+
+        ui.vertical_centered(|ui| {
+            ui.add_space(50.0);
+
+            if self.current_chat_id.is_some() {
+                ui.label("Export the current chat conversation to a file.");
+                ui.add_space(20.0);
+
+                if ui.button("📥 Export Current Chat").clicked() {
+                    self.export_current_chat();
+                }
+            } else {
+                ui.label("Select a chat to export.");
+            }
+        });
+    }
+
+    fn render_organize_view(&mut self, ui: &mut egui::Ui) {
+        ui.heading("Organize");
+        ui.add_space(12.0);
+
+        if let Some(chat_id) = &self.current_chat_id.clone() {
+            ui.label("Move the current chat to a project:");
+            ui.add_space(20.0);
+
+            if ui.button("📋 No Project (Unassigned)").clicked() {
+                self.move_chat_to_project(chat_id, None);
+            }
+
+            ui.add_space(10.0);
+
+            let mut projects_vec: Vec<_> = self.projects.values().cloned().collect();
+            projects_vec.sort_by(|a, b| a.name.cmp(&b.name));
+
+            for project in projects_vec {
+                if ui.button(format!("📁 {}", project.name)).clicked() {
+                    self.move_chat_to_project(chat_id, Some(project.id.clone()));
+                }
+            }
+        } else {
+            ui.vertical_centered(|ui| {
+                ui.add_space(50.0);
+                ui.label("Select a chat to organize.");
+            });
         }
     }
 }
