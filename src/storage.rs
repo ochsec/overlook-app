@@ -244,6 +244,28 @@ impl Storage {
         }
         Ok(())
     }
+
+    pub fn load_favorite_models() -> Result<Vec<String>> {
+        if let Some(data_dir) = dirs::config_dir() {
+            let app_dir = data_dir.join("overlook");
+            if let Ok(favorites_data) = std::fs::read_to_string(app_dir.join("favorite_models.json")) {
+                if let Ok(favorites) = serde_json::from_str::<Vec<String>>(&favorites_data) {
+                    return Ok(favorites);
+                }
+            }
+        }
+        Ok(Vec::new())
+    }
+
+    pub fn save_favorite_models(favorites: &[String]) -> Result<()> {
+        if let Some(data_dir) = dirs::config_dir() {
+            let app_dir = data_dir.join("overlook");
+            std::fs::create_dir_all(&app_dir)?;
+            let data = serde_json::to_string_pretty(favorites)?;
+            std::fs::write(app_dir.join("favorite_models.json"), data)?;
+        }
+        Ok(())
+    }
 }
 
 fn ensure_master_key() -> Result<[u8; MASTER_KEY_LEN]> {

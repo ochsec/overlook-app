@@ -31,9 +31,13 @@ impl Default for ApiClient {
 
 impl ApiClient {
     pub fn new() -> Self {
-        Self {
-            client: reqwest::Client::new(),
-        }
+        let client = reqwest::Client::builder()
+            .timeout(Duration::from_secs(30)) // 30 second timeout for all requests
+            .connect_timeout(Duration::from_secs(10)) // 10 second connection timeout
+            .build()
+            .unwrap_or_else(|_| reqwest::Client::new());
+
+        Self { client }
     }
 
     /// Determines if an error should be retried based on the status code

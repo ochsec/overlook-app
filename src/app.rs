@@ -37,11 +37,15 @@ pub struct OverlookApp {
     pub current_project_id: Option<String>,
     pub available_models: Vec<ModelDescriptor>,
     pub loading_models: bool,
+    pub models_promise: Option<Promise<Result<Vec<ModelDescriptor>, String>>>,
     pub sending_message: bool,
     pub show_project_modal: bool,
     pub new_project_name: String,
     pub project_modal_mode: ProjectModalMode,
     pub project_modal_target_id: Option<String>,
+    pub show_model_picker_modal: bool,
+    pub model_search_query: String,
+    pub favorite_models: Vec<String>,
     pub current_view: ViewMode,
     pub api_key_masked: bool,
     pub rt: Option<tokio::runtime::Runtime>,
@@ -69,6 +73,7 @@ pub struct OverlookApp {
     pub last_request_provider: Option<ProviderKind>,
     pub last_request_model: Option<String>,
     pub last_model_descriptor: Option<ModelDescriptor>,
+    pub last_export_result: Option<Result<String, String>>, // Store result of last export
     api_client: ApiClient,
 }
 
@@ -87,11 +92,15 @@ impl Default for OverlookApp {
             current_project_id: None,
             available_models: Vec::default(),
             loading_models: bool::default(),
+            models_promise: None,
             sending_message: bool::default(),
             show_project_modal: bool::default(),
             new_project_name: String::default(),
             project_modal_mode: ProjectModalMode::Create,
             project_modal_target_id: None,
+            show_model_picker_modal: false,
+            model_search_query: String::new(),
+            favorite_models: Vec::new(),
             current_view: ViewMode::Chat,
             api_key_masked: true,
             rt: None,
@@ -119,6 +128,7 @@ impl Default for OverlookApp {
             last_request_provider: None,
             last_request_model: None,
             last_model_descriptor: None,
+            last_export_result: None,
             api_client: ApiClient::new(),
         }
     }
@@ -172,6 +182,11 @@ impl OverlookApp {
             last_request_provider: None,
             last_request_model: None,
             last_model_descriptor: None,
+            last_export_result: None,
+            models_promise: None,
+            show_model_picker_modal: false,
+            model_search_query: String::new(),
+            favorite_models: Vec::new(),
             ..Default::default()
         };
         app.load_data();
@@ -203,6 +218,7 @@ impl OverlookApp {
         self.chats = Storage::load_chats().unwrap_or_default();
         self.projects = Storage::load_projects().unwrap_or_default();
         self.font_size = Storage::load_font_size().unwrap_or(14.0);
+        self.favorite_models = Storage::load_favorite_models().unwrap_or_default();
     }
 
     pub fn save_data(&self) {
@@ -225,6 +241,9 @@ impl OverlookApp {
         }
         if let Err(e) = Storage::save_font_size(self.font_size) {
             println!("❌ Failed to save font size: {}", e);
+        }
+        if let Err(e) = Storage::save_favorite_models(&self.favorite_models) {
+            println!("❌ Failed to save favorite models: {}", e);
         }
     }
 
@@ -271,49 +290,64 @@ impl OverlookApp {
             &api_key[..std::cmp::min(8, api_key.len())]
         );
 
-        if let Some(rt) = &self.rt {
-            let models_future = {
-                let api_client = ApiClient::new();
-                let api_key = api_key.clone();
-                async move { api_client.load_models(provider, &api_key).await }
-            };
+        // Use Promise to avoid blocking the UI thread
+        let api_client = ApiClient::new();
+        let api_key_clone = api_key.clone();
+        let promise = Promise::spawn_thread("load_models", move || {
+            // Create a minimal tokio runtime for this thread
+            let rt = tokio::runtime::Runtime::new().unwrap();
+            rt.block_on(async move {
+                api_client
+                    .load_models(provider, &api_key_clone)
+                    .await
+                    .map_err(|e| e.to_string())
+            })
+        });
 
-            match rt.block_on(models_future) {
-                Ok(models) => {
-                    println!(
-                        "Successfully loaded {} models for {}",
-                        models.len(),
-                        provider.display_name()
-                    );
-                    self.available_models = models;
+        self.models_promise = Some(promise);
+    }
 
-                    let has_current = self
-                        .available_models
-                        .iter()
-                        .any(|model| model.id == self.current_model);
+    pub fn handle_models_response(&mut self) {
+        if let Some(promise) = &self.models_promise {
+            if let Some(result) = promise.ready() {
+                match result {
+                    Ok(models) => {
+                        println!(
+                            "Successfully loaded {} models for {}",
+                            models.len(),
+                            self.current_provider.display_name()
+                        );
+                        self.available_models = models.clone();
 
-                    if !has_current {
-                        if let Some(first) = self.available_models.first() {
-                            self.current_model = first.id.clone();
-                        } else {
-                            self.current_model.clear();
+                        let has_current = self
+                            .available_models
+                            .iter()
+                            .any(|model| model.id == self.current_model);
+
+                        if !has_current {
+                            if let Some(first) = self.available_models.first() {
+                                self.current_model = first.id.clone();
+                            } else {
+                                self.current_model.clear();
+                            }
                         }
                     }
+                    Err(e) => {
+                        eprintln!(
+                            "Error loading models for {}: {}",
+                            self.current_provider.display_name(),
+                            e
+                        );
+                        self.available_models.clear();
+                        self.current_model.clear();
+                    }
                 }
-                Err(e) => {
-                    eprintln!(
-                        "Error loading models for {}: {}",
-                        provider.display_name(),
-                        e
-                    );
-                    self.available_models.clear();
-                    self.current_model.clear();
-                }
+
+                self.loading_models = false;
+                self.models_promise = None;
+                self.refresh_token_usage_for_current_chat();
             }
         }
-
-        self.loading_models = false;
-        self.refresh_token_usage_for_current_chat();
     }
 
     fn get_model_descriptor(
@@ -331,6 +365,89 @@ impl OverlookApp {
                     .find(|model| model.id == model_id)
                     .cloned()
             })
+    }
+
+    /// Categorize a model into a vendor/group for better organization
+    pub fn get_model_category(model: &ModelDescriptor) -> String {
+        // For OpenRouter, extract vendor from model ID (format: vendor/model)
+        if model.provider == ProviderKind::OpenRouter {
+            if let Some(slash_pos) = model.id.find('/') {
+                let vendor = &model.id[..slash_pos];
+                // Capitalize and clean up vendor name
+                return vendor
+                    .split('-')
+                    .map(|word| {
+                        let mut chars = word.chars();
+                        match chars.next() {
+                            None => String::new(),
+                            Some(first) => first.to_uppercase().collect::<String>() + chars.as_str(),
+                        }
+                    })
+                    .collect::<Vec<_>>()
+                    .join(" ");
+            }
+        }
+
+        // For other providers, use simple categorization by model family
+        let lower = model.name.to_lowercase();
+
+        if lower.contains("gpt-4") || lower.contains("gpt4") {
+            "GPT-4".to_string()
+        } else if lower.contains("gpt-3.5") || lower.contains("gpt3") {
+            "GPT-3.5".to_string()
+        } else if lower.contains("gpt") {
+            "GPT".to_string()
+        } else if lower.contains("claude-3.5") || lower.contains("claude-3-5") {
+            "Claude 3.5".to_string()
+        } else if lower.contains("claude-3") {
+            "Claude 3".to_string()
+        } else if lower.contains("claude") {
+            "Claude".to_string()
+        } else if lower.contains("gemini") {
+            "Gemini".to_string()
+        } else if lower.contains("llama") {
+            "Llama".to_string()
+        } else {
+            "Models".to_string()
+        }
+    }
+
+    /// Get filtered and grouped models for the picker
+    pub fn get_filtered_grouped_models(&self) -> Vec<(String, Vec<ModelDescriptor>)> {
+        use std::collections::HashMap;
+
+        let query = self.model_search_query.to_lowercase();
+
+        // Filter models by search query (clone them)
+        let filtered: Vec<ModelDescriptor> = self.available_models
+            .iter()
+            .filter(|model| {
+                if query.is_empty() {
+                    true
+                } else {
+                    model.name.to_lowercase().contains(&query) ||
+                    model.id.to_lowercase().contains(&query)
+                }
+            })
+            .cloned()
+            .collect();
+
+        // Group by category
+        let mut groups: HashMap<String, Vec<ModelDescriptor>> = HashMap::new();
+        for model in filtered {
+            let category = Self::get_model_category(&model);
+            groups.entry(category).or_default().push(model);
+        }
+
+        // Sort groups and models within groups
+        let mut result: Vec<(String, Vec<ModelDescriptor>)> = groups.into_iter().collect();
+        result.sort_by(|a, b| a.0.cmp(&b.0));
+
+        for (_, models) in &mut result {
+            models.sort_by(|a, b| a.name.cmp(&b.name));
+        }
+
+        result
     }
 
     fn context_length_for_model(
@@ -697,12 +814,12 @@ impl OverlookApp {
         self.save_data();
     }
 
-    pub fn export_current_chat(&self) {
+    pub fn export_current_chat(&mut self) {
         if let Some(chat_id) = &self.current_chat_id {
             if let Some(chat) = self.chats.get(chat_id) {
                 let markdown = Exporter::generate_chat_markdown(chat);
                 let filename = format!("{}.md", chat.title.replace(" ", "_"));
-                Exporter::export_to_file(&markdown, &filename);
+                self.last_export_result = Some(Exporter::export_to_file(&markdown, &filename));
             }
         }
     }
@@ -717,21 +834,27 @@ impl OverlookApp {
                 received_new_tokens = true;
             }
 
-            // 2. Smooth character-by-character release from buffer
+            // 2. Smooth character release from buffer
             let now = std::time::Instant::now();
-            let char_interval = std::time::Duration::from_millis(15); // ~67 chars/sec for smooth effect
+            let char_interval = std::time::Duration::from_millis(10); // Update every 10ms
+            let chars_per_update = 3; // Display 3 chars at a time for faster streaming
 
             if now.duration_since(self.last_char_time) >= char_interval
                 && self.char_display_index < self.char_buffer.len()
             {
-                // Add next character to display
-                if let Some(next_char) = self.char_buffer.chars().nth(self.char_display_index) {
-                    self.streaming_message.push(next_char);
-                    self.char_display_index += 1;
-                    self.last_char_time = now;
+                // Add multiple characters at once for faster display
+                let chars_to_add = chars_per_update.min(self.char_buffer.len() - self.char_display_index);
+                let char_vec: Vec<char> = self.char_buffer.chars().collect();
 
-                    ctx.request_repaint();
+                for i in 0..chars_to_add {
+                    if let Some(&next_char) = char_vec.get(self.char_display_index + i) {
+                        self.streaming_message.push(next_char);
+                    }
                 }
+
+                self.char_display_index += chars_to_add;
+                self.last_char_time = now;
+                ctx.request_repaint();
             }
 
             // 3. Continue updating if there are more characters to display

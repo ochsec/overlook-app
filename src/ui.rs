@@ -17,6 +17,9 @@ impl eframe::App for OverlookApp {
         // Check for completed file picker
         self.handle_file_picker_response();
 
+        // Check for completed models loading
+        self.handle_models_response();
+
         self.render_menu_bar(ctx);
         self.render_sidebar(ctx);
         self.render_main_content(ctx);
@@ -69,10 +72,16 @@ impl OverlookApp {
                     let key_ref = self.api_keys.get_mut(provider);
                     // Don't mask URLs for local providers
                     let should_mask = matches!(provider, ProviderKind::OpenRouter | ProviderKind::OpenAI | ProviderKind::Anthropic);
+
+                    // Calculate available width for the text input
+                    let available_width = ui.available_width();
+                    let button_width = if should_mask { 60.0 } else { 0.0 };
+                    let desired_width = (available_width - button_width - 8.0).min(600.0);
+
                     let response = ui.add(
                         egui::TextEdit::singleline(key_ref)
                             .hint_text(hint)
-                            .desired_width(f32::INFINITY)
+                            .desired_width(desired_width)
                             .password(should_mask && self.api_key_masked),
                     );
 
@@ -95,11 +104,13 @@ impl OverlookApp {
         let trimmed = self.api_keys.get(provider).trim().to_string();
         *self.api_keys.get_mut(provider) = trimmed;
 
-        self.save_data();
-
-        if provider == self.current_provider {
-            self.load_models();
+        // Only save API keys, not all data (chats, projects, etc.)
+        if let Err(e) = crate::storage::Storage::save_api_keys(&self.api_keys) {
+            println!("❌ Failed to save API keys: {}", e);
         }
+
+        // Don't load models on every keystroke - user can use refresh button
+        // This prevents lag when typing URLs for local providers
     }
 
     fn render_sidebar(&mut self, ctx: &egui::Context) {
@@ -330,24 +341,13 @@ impl OverlookApp {
                     .unwrap_or_else(|| self.current_model.clone())
             };
 
-            let previous_model = self.current_model.clone();
+            // Model picker button (opens modal)
             ui.add_enabled_ui(provider_has_key, |ui| {
-                egui::ComboBox::from_id_salt("model_selector")
-                    .selected_text(combo_label.clone())
-                    .show_ui(ui, |ui| {
-                        for model in &self.available_models {
-                            ui.selectable_value(
-                                &mut self.current_model,
-                                model.id.clone(),
-                                &model.name,
-                            );
-                        }
-                    });
+                if ui.button(format!("🔍 {}", combo_label)).clicked() {
+                    self.show_model_picker_modal = true;
+                    self.model_search_query.clear();
+                }
             });
-
-            if self.current_model != previous_model {
-                self.on_model_changed();
-            }
 
             if !provider_has_key {
                 ui.label(
@@ -643,9 +643,13 @@ impl OverlookApp {
                     self.open_file_picker();
                 }
 
+                // Calculate available width for the text input
+                let available_width = ui.available_width();
+                let input_width = (available_width - 80.0).min(800.0);
+
                 // Large text input that takes most of the width
                 let text_edit_response = ui.add_sized(
-                    [ui.available_width() - 80.0, 60.0], // Make input much taller
+                    [input_width, 60.0], // Make input much taller
                     egui::TextEdit::multiline(&mut self.message_input)
                         .hint_text(
                             "Type your message here... (Shift+Enter for new line, Enter to send)",
@@ -749,6 +753,170 @@ impl OverlookApp {
                     });
                 });
         }
+
+        // Model picker modal
+        if self.show_model_picker_modal {
+            egui::Window::new("Select Model")
+                .collapsible(false)
+                .resizable(true)
+                .default_width(700.0)
+                .default_height(600.0)
+                .show(ctx, |ui| {
+                    self.render_model_picker_content(ui);
+                });
+        }
+    }
+
+    fn render_model_picker_content(&mut self, ui: &mut egui::Ui) {
+        // Search bar
+        ui.horizontal(|ui| {
+            ui.label("🔍 Search:");
+            let response = ui.add_sized(
+                [ui.available_width() - 80.0, 20.0],
+                egui::TextEdit::singleline(&mut self.model_search_query).hint_text("Type to filter models...")
+            );
+
+            if response.changed() {
+                // Search query changed - UI will update automatically
+            }
+
+            if ui.button("Clear").clicked() {
+                self.model_search_query.clear();
+            }
+        });
+
+        ui.add_space(8.0);
+
+        // Get filtered and grouped models
+        let grouped_models = self.get_filtered_grouped_models();
+        let total_filtered = grouped_models.iter().map(|(_, models)| models.len()).sum::<usize>();
+
+        // Show count
+        ui.label(format!(
+            "Showing {} of {} models",
+            total_filtered,
+            self.available_models.len()
+        ));
+
+        ui.add_space(8.0);
+        ui.separator();
+        ui.add_space(8.0);
+
+        // Favorites section (if any)
+        if !self.favorite_models.is_empty() {
+            ui.collapsing("⭐ Favorites", |ui| {
+                egui::ScrollArea::vertical()
+                    .max_height(150.0)
+                    .show(ui, |ui| {
+                        let favorites: Vec<_> = self.available_models
+                            .iter()
+                            .filter(|m| self.favorite_models.contains(&m.id))
+                            .cloned()
+                            .collect();
+
+                        for model in favorites {
+                            self.render_model_item(ui, &model, true);
+                        }
+                    });
+            });
+            ui.add_space(8.0);
+        }
+
+        // Grouped models list
+        egui::ScrollArea::vertical()
+            .auto_shrink([false, false])
+            .show(ui, |ui| {
+                for (category, models) in grouped_models {
+                    ui.collapsing(format!("{} ({})", category, models.len()), |ui| {
+                        for model in &models {
+                            self.render_model_item(ui, model, false);
+                        }
+                    });
+                }
+            });
+
+        ui.add_space(12.0);
+        ui.separator();
+
+        // Bottom buttons
+        ui.horizontal(|ui| {
+            if ui.button("Close").clicked() {
+                self.show_model_picker_modal = false;
+                self.model_search_query.clear();
+            }
+        });
+    }
+
+    fn render_model_item(&mut self, ui: &mut egui::Ui, model: &crate::types::ModelDescriptor, _in_favorites: bool) {
+        ui.horizontal(|ui| {
+            // Favorite toggle
+            let is_favorite = self.favorite_models.contains(&model.id);
+            let star_icon = if is_favorite { "⭐" } else { "☆" };
+
+            if ui.small_button(star_icon).clicked() {
+                if is_favorite {
+                    self.favorite_models.retain(|id| id != &model.id);
+                } else {
+                    self.favorite_models.push(model.id.clone());
+                }
+                // Save favorites immediately
+                if let Err(e) = crate::storage::Storage::save_favorite_models(&self.favorite_models) {
+                    println!("❌ Failed to save favorite models: {}", e);
+                }
+            }
+
+            // Model name as selectable label (left-aligned)
+            let is_selected = self.current_model == model.id;
+            let available_width = ui.available_width() - 150.0;
+
+            let (rect, response) = ui.allocate_exact_size(
+                egui::vec2(available_width, 24.0),
+                egui::Sense::click()
+            );
+
+            if is_selected {
+                ui.painter().rect_filled(
+                    rect,
+                    4.0,
+                    self.current_theme.accent,
+                );
+            }
+
+            let text_pos = rect.left_center() + egui::vec2(8.0, 0.0);
+            ui.painter().text(
+                text_pos,
+                egui::Align2::LEFT_CENTER,
+                &model.name,
+                egui::FontId::proportional(14.0),
+                if is_selected {
+                    egui::Color32::WHITE
+                } else {
+                    ui.style().visuals.text_color()
+                },
+            );
+
+            if response.clicked() {
+                self.current_model = model.id.clone();
+                self.show_model_picker_modal = false;
+                self.model_search_query.clear();
+                self.on_model_changed();
+            }
+
+            // Context length badge
+            if let Some(context_len) = model.context_length {
+                ui.label(
+                    egui::RichText::new(format!("{}k", context_len / 1000))
+                        .size(11.0)
+                        .color(egui::Color32::GRAY)
+                );
+            }
+        })
+        .response
+        .on_hover_text_at_pointer(
+            model.description.as_ref()
+                .map(|d| d.as_str())
+                .unwrap_or("No description available")
+        );
     }
 
     fn render_settings_view(&mut self, ui: &mut egui::Ui) {
@@ -882,6 +1050,29 @@ impl OverlookApp {
 
                 if ui.button("📥 Export Current Chat").clicked() {
                     self.export_current_chat();
+                }
+
+                // Show export result
+                if let Some(result) = &self.last_export_result {
+                    ui.add_space(20.0);
+                    match result {
+                        Ok(path) => {
+                            ui.label(
+                                egui::RichText::new("✅ Export successful!")
+                                    .color(egui::Color32::GREEN)
+                                    .strong(),
+                            );
+                            ui.add_space(8.0);
+                            ui.label(egui::RichText::new("Saved to:").italics());
+                            ui.label(egui::RichText::new(path).monospace());
+                        }
+                        Err(err) => {
+                            ui.label(
+                                egui::RichText::new(format!("❌ Export failed: {}", err))
+                                    .color(egui::Color32::RED),
+                            );
+                        }
+                    }
                 }
             } else {
                 ui.label("Select a chat to export.");

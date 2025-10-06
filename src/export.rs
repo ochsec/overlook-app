@@ -28,10 +28,17 @@ impl Exporter {
         markdown
     }
 
-    pub fn export_to_file(content: &str, filename: &str) {
+    pub fn export_to_file(content: &str, filename: &str) -> Result<String, String> {
         if let Some(downloads_dir) = dirs::download_dir() {
             let file_path = downloads_dir.join(filename);
-            let _ = std::fs::write(file_path, content);
+            std::fs::write(&file_path, content)
+                .map_err(|e| format!("Failed to write file: {}", e))?;
+            file_path
+                .to_str()
+                .map(|s| s.to_string())
+                .ok_or_else(|| "Invalid file path".to_string())
+        } else {
+            Err("Could not find downloads directory".to_string())
         }
     }
 }
