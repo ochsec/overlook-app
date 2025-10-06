@@ -1,2 +1,3 @@
 /target
-/docs
+/docs/file_samples/*
+**/.DS_Store

@@ -1,0 +1,1171 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OpenRouter Chat UI</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #1a1a1a;
+            color: #e0e0e0;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        .app-container {
+            display: grid;
+            grid-template-columns: 300px 1fr;
+            height: 100vh;
+        }
+
+        .sidebar {
+            background: #2d2d2d;
+            border-right: 1px solid #404040;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .sidebar-header {
+            padding: 20px;
+            border-bottom: 1px solid #404040;
+        }
+
+        .api-config {
+            margin-bottom: 15px;
+        }
+
+        .api-config input, .api-config select {
+            width: 100%;
+            padding: 8px;
+            margin-top: 5px;
+            background: #404040;
+            border: 1px solid #555;
+            color: #e0e0e0;
+            border-radius: 4px;
+        }
+
+        .new-chat-btn {
+            width: 100%;
+            padding: 10px;
+            background: #0066cc;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 500;
+        }
+
+        .new-chat-btn:hover {
+            background: #0052a3;
+        }
+
+        .folder-section {
+            flex: 1;
+            overflow-y: auto;
+            padding: 10px;
+        }
+
+        .folder {
+            margin-bottom: 10px;
+        }
+
+        .folder-header {
+            display: flex;
+            align-items: center;
+            padding: 8px;
+            background: #363636;
+            border-radius: 4px;
+            cursor: pointer;
+            margin-bottom: 5px;
+        }
+
+        .folder-header:hover {
+            background: #404040;
+        }
+
+        .folder-icon {
+            margin-right: 8px;
+            font-size: 14px;
+        }
+
+        .folder-name {
+            flex: 1;
+        }
+
+        .folder-actions {
+            opacity: 0;
+            transition: opacity 0.2s;
+        }
+
+        .folder-header:hover .folder-actions {
+            opacity: 1;
+        }
+
+        .chat-item {
+            padding: 8px 16px;
+            margin: 2px 0;
+            background: #404040;
+            border-radius: 4px;
+            cursor: pointer;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .chat-item:hover {
+            background: #4a4a4a;
+        }
+
+        .chat-item.active {
+            background: #0066cc;
+        }
+
+        .chat-title {
+            flex: 1;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .chat-actions {
+            opacity: 0;
+            transition: opacity 0.2s;
+            display: flex;
+            gap: 5px;
+        }
+
+        .chat-item:hover .chat-actions {
+            opacity: 1;
+        }
+
+        .main-content {
+            display: flex;
+            flex-direction: column;
+            background: #1a1a1a;
+        }
+
+        .chat-header {
+            padding: 15px 20px;
+            border-bottom: 1px solid #404040;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .model-selector {
+            padding: 6px 10px;
+            background: #404040;
+            border: 1px solid #555;
+            color: #e0e0e0;
+            border-radius: 4px;
+        }
+
+        .chat-area {
+            flex: 1;
+            overflow-y: auto;
+            padding: 20px;
+        }
+
+        .message {
+            margin-bottom: 20px;
+            display: flex;
+            gap: 12px;
+        }
+
+        .message.user {
+            flex-direction: row-reverse;
+        }
+
+        .message-avatar {
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            flex-shrink: 0;
+        }
+
+        .user .message-avatar {
+            background: #0066cc;
+        }
+
+        .assistant .message-avatar {
+            background: #666;
+        }
+
+        .message-content {
+            max-width: 70%;
+            padding: 12px 16px;
+            border-radius: 12px;
+            line-height: 1.5;
+        }
+
+        .user .message-content {
+            background: #0066cc;
+            color: white;
+        }
+
+        .assistant .message-content {
+            background: #2d2d2d;
+            border: 1px solid #404040;
+        }
+
+        .attachment-preview {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin-top: 8px;
+        }
+
+        .attachment-item {
+            background: #404040;
+            padding: 8px 12px;
+            border-radius: 6px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 14px;
+        }
+
+        .input-area {
+            padding: 20px;
+            border-top: 1px solid #404040;
+        }
+
+        .input-container {
+            display: flex;
+            gap: 10px;
+            align-items: flex-end;
+        }
+
+        .message-input {
+            flex: 1;
+            min-height: 20px;
+            max-height: 150px;
+            padding: 12px;
+            background: #2d2d2d;
+            border: 1px solid #404040;
+            border-radius: 8px;
+            color: #e0e0e0;
+            resize: none;
+            overflow-y: auto;
+        }
+
+        .input-actions {
+            display: flex;
+            gap: 8px;
+        }
+
+        .action-btn {
+            padding: 10px;
+            background: #404040;
+            border: none;
+            border-radius: 6px;
+            color: #e0e0e0;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        .action-btn:hover {
+            background: #4a4a4a;
+        }
+
+        .send-btn {
+            background: #0066cc;
+            color: white;
+        }
+
+        .send-btn:hover {
+            background: #0052a3;
+        }
+
+        .send-btn:disabled {
+            background: #333;
+            cursor: not-allowed;
+        }
+
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.8);
+            z-index: 1000;
+        }
+
+        .modal-content {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: #2d2d2d;
+            padding: 20px;
+            border-radius: 8px;
+            min-width: 300px;
+        }
+
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+
+        .close-btn {
+            background: none;
+            border: none;
+            color: #e0e0e0;
+            font-size: 20px;
+            cursor: pointer;
+        }
+
+        .form-group {
+            margin-bottom: 15px;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 5px;
+            color: #ccc;
+        }
+
+        .form-group input, .form-group select {
+            width: 100%;
+            padding: 8px;
+            background: #404040;
+            border: 1px solid #555;
+            color: #e0e0e0;
+            border-radius: 4px;
+        }
+
+        .btn-group {
+            display: flex;
+            gap: 10px;
+            justify-content: flex-end;
+        }
+
+        .btn {
+            padding: 8px 16px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: 500;
+        }
+
+        .btn-primary {
+            background: #0066cc;
+            color: white;
+        }
+
+        .btn-secondary {
+            background: #666;
+            color: white;
+        }
+
+        .loading {
+            opacity: 0.6;
+            pointer-events: none;
+        }
+
+        .typing-indicator {
+            padding: 12px 16px;
+            background: #2d2d2d;
+            border: 1px solid #404040;
+            border-radius: 12px;
+            display: inline-block;
+        }
+
+        .typing-dots {
+            display: inline-flex;
+            gap: 4px;
+        }
+
+        .typing-dot {
+            width: 6px;
+            height: 6px;
+            background: #666;
+            border-radius: 50%;
+            animation: typing 1.4s ease-in-out infinite both;
+        }
+
+        .typing-dot:nth-child(1) { animation-delay: -0.32s; }
+        .typing-dot:nth-child(2) { animation-delay: -0.16s; }
+        .typing-dot:nth-child(3) { animation-delay: 0; }
+
+        @keyframes typing {
+            0%, 80%, 100% { opacity: 0.3; }
+            40% { opacity: 1; }
+        }
+
+        .file-input {
+            display: none;
+        }
+
+        .attachments-preview {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-bottom: 10px;
+        }
+
+        .attachment-preview-item {
+            background: #404040;
+            padding: 6px 10px;
+            border-radius: 6px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 12px;
+        }
+
+        .remove-attachment {
+            background: none;
+            border: none;
+            color: #ff6b6b;
+            cursor: pointer;
+            font-size: 12px;
+        }
+
+        .context-menu {
+            position: absolute;
+            background: #2d2d2d;
+            border: 1px solid #404040;
+            border-radius: 4px;
+            padding: 5px 0;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
+            z-index: 100;
+            display: none;
+        }
+
+        .context-menu-item {
+            padding: 8px 16px;
+            cursor: pointer;
+            color: #e0e0e0;
+            font-size: 14px;
+        }
+
+        .context-menu-item:hover {
+            background: #404040;
+        }
+
+        .export-options {
+            display: flex;
+            gap: 10px;
+            margin-top: 15px;
+        }
+    </style>
+</head>
+<body>
+    <div class="app-container">
+        <!-- Sidebar -->
+        <div class="sidebar">
+            <div class="sidebar-header">
+                <div class="api-config">
+                    <label for="apiKey" style="color: #ccc; font-size: 14px;">OpenRouter API Key:</label>
+                    <input type="password" id="apiKey" placeholder="Enter your API key">
+                </div>
+                <button class="new-chat-btn" onclick="createNewChat()">+ New Chat</button>
+            </div>
+            
+            <div class="folder-section" id="folderSection">
+                <!-- Folders and chats will be dynamically generated here -->
+            </div>
+        </div>
+
+        <!-- Main Content -->
+        <div class="main-content">
+            <div class="chat-header">
+                <div>
+                    <select class="model-selector" id="modelSelector">
+                        <option value="">Select a model...</option>
+                    </select>
+                </div>
+                <div>
+                    <button class="action-btn" onclick="showExportModal()">📥 Export</button>
+                    <button class="action-btn" onclick="showFolderModal()">📁 Organize</button>
+                </div>
+            </div>
+            
+            <div class="chat-area" id="chatArea">
+                <div style="text-align: center; color: #666; margin-top: 50px;">
+                    <h3>Welcome to OpenRouter Chat</h3>
+                    <p>Select a model and start chatting, or create a new conversation.</p>
+                </div>
+            </div>
+            
+            <div class="input-area">
+                <div class="attachments-preview" id="attachmentsPreview"></div>
+                <div class="input-container">
+                    <textarea class="message-input" id="messageInput" placeholder="Type your message..." rows="1"></textarea>
+                    <div class="input-actions">
+                        <button class="action-btn" onclick="document.getElementById('fileInput').click()">📎</button>
+                        <button class="send-btn" id="sendBtn" onclick="sendMessage()">Send</button>
+                    </div>
+                </div>
+                <input type="file" id="fileInput" class="file-input" multiple accept=".pdf,.doc,.docx,.xlsx,.xls,.csv,.png,.jpg,.jpeg,.gif,.txt,.md">
+            </div>
+        </div>
+    </div>
+
+    <!-- Modals -->
+    <div class="modal" id="folderModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Organize Chat</h3>
+                <button class="close-btn" onclick="closeModal('folderModal')">&times;</button>
+            </div>
+            <div class="form-group">
+                <label>Move to folder:</label>
+                <select id="folderSelect">
+                    <option value="">No folder</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label>Or create new folder:</label>
+                <input type="text" id="newFolderInput" placeholder="Folder name">
+            </div>
+            <div class="btn-group">
+                <button class="btn btn-secondary" onclick="closeModal('folderModal')">Cancel</button>
+                <button class="btn btn-primary" onclick="organizeChat()">Save</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal" id="exportModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Export Chat</h3>
+                <button class="close-btn" onclick="closeModal('exportModal')">&times;</button>
+            </div>
+            <div class="export-options">
+                <button class="btn btn-primary" onclick="exportCurrentChat()">Export Current Chat</button>
+                <button class="btn btn-primary" onclick="exportAllChats()">Export All Chats</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="context-menu" id="contextMenu">
+        <div class="context-menu-item" onclick="renameChat()">Rename</div>
+        <div class="context-menu-item" onclick="deleteChat()">Delete</div>
+        <div class="context-menu-item" onclick="duplicateChat()">Duplicate</div>
+    </div>
+
+    <script>
+        // Application state
+        let currentChatId = null;
+        let currentModel = '';
+        let attachments = [];
+        let chatData = JSON.parse(localStorage.getItem('openrouter_chats')) || {};
+        let folders = JSON.parse(localStorage.getItem('openrouter_folders')) || {};
+        let apiKey = localStorage.getItem('openrouter_api_key') || '';
+
+        // Initialize the application
+        async function init() {
+            document.getElementById('apiKey').value = apiKey;
+            await loadModels();
+            loadChatsAndFolders();
+            setupEventListeners();
+        }
+
+        // Load available models from OpenRouter
+        async function loadModels() {
+            if (!apiKey) return;
+
+            try {
+                const response = await fetch('https://openrouter.ai/api/v1/models', {
+                    headers: {
+                        'Authorization': `Bearer ${apiKey}`
+                    }
+                });
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    populateModelSelector(data.data);
+                }
+            } catch (error) {
+                console.error('Failed to load models:', error);
+            }
+        }
+
+        function populateModelSelector(models) {
+            const selector = document.getElementById('modelSelector');
+            selector.innerHTML = '<option value="">Select a model...</option>';
+            
+            models.forEach(model => {
+                const option = document.createElement('option');
+                option.value = model.id;
+                option.textContent = `${model.name} (${model.id})`;
+                selector.appendChild(option);
+            });
+        }
+
+        function setupEventListeners() {
+            // API Key input
+            document.getElementById('apiKey').addEventListener('change', (e) => {
+                apiKey = e.target.value;
+                localStorage.setItem('openrouter_api_key', apiKey);
+                loadModels();
+            });
+
+            // Model selector
+            document.getElementById('modelSelector').addEventListener('change', (e) => {
+                currentModel = e.target.value;
+            });
+
+            // Message input
+            const messageInput = document.getElementById('messageInput');
+            messageInput.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    sendMessage();
+                }
+            });
+
+            // Auto-resize textarea
+            messageInput.addEventListener('input', () => {
+                messageInput.style.height = 'auto';
+                messageInput.style.height = Math.min(messageInput.scrollHeight, 150) + 'px';
+            });
+
+            // File input
+            document.getElementById('fileInput').addEventListener('change', handleFileSelection);
+
+            // Context menu
+            document.addEventListener('click', hideContextMenu);
+        }
+
+        function createNewChat() {
+            const chatId = 'chat_' + Date.now();
+            const newChat = {
+                id: chatId,
+                title: 'New Chat',
+                messages: [],
+                model: '',
+                folder: null,
+                createdAt: new Date().toISOString(),
+                updatedAt: new Date().toISOString()
+            };
+
+            chatData[chatId] = newChat;
+            saveData();
+            loadChatsAndFolders();
+            switchToChat(chatId);
+        }
+
+        function switchToChat(chatId) {
+            currentChatId = chatId;
+            const chat = chatData[chatId];
+            
+            // Update UI
+            document.getElementById('modelSelector').value = chat.model || '';
+            currentModel = chat.model || '';
+            
+            renderChatMessages();
+            updateChatSelection();
+        }
+
+        function renderChatMessages() {
+            const chatArea = document.getElementById('chatArea');
+            
+            if (!currentChatId) {
+                chatArea.innerHTML = `
+                    <div style="text-align: center; color: #666; margin-top: 50px;">
+                        <h3>Welcome to OpenRouter Chat</h3>
+                        <p>Select a model and start chatting, or create a new conversation.</p>
+                    </div>
+                `;
+                return;
+            }
+
+            const chat = chatData[currentChatId];
+            chatArea.innerHTML = '';
+
+            chat.messages.forEach(message => {
+                const messageEl = createMessageElement(message);
+                chatArea.appendChild(messageEl);
+            });
+
+            chatArea.scrollTop = chatArea.scrollHeight;
+        }
+
+        function createMessageElement(message) {
+            const messageEl = document.createElement('div');
+            messageEl.className = `message ${message.role}`;
+            
+            const avatar = document.createElement('div');
+            avatar.className = 'message-avatar';
+            avatar.textContent = message.role === 'user' ? 'U' : 'AI';
+            
+            const content = document.createElement('div');
+            content.className = 'message-content';
+            content.textContent = message.content;
+            
+            messageEl.appendChild(avatar);
+            messageEl.appendChild(content);
+
+            // Add attachments if present
+            if (message.attachments && message.attachments.length > 0) {
+                const attachmentPreview = document.createElement('div');
+                attachmentPreview.className = 'attachment-preview';
+                
+                message.attachments.forEach(att => {
+                    const item = document.createElement('div');
+                    item.className = 'attachment-item';
+                    item.innerHTML = `📎 ${att.name} (${att.type})`;
+                    attachmentPreview.appendChild(item);
+                });
+                
+                content.appendChild(attachmentPreview);
+            }
+
+            return messageEl;
+        }
+
+        async function sendMessage() {
+            const messageInput = document.getElementById('messageInput');
+            const message = messageInput.value.trim();
+            
+            if (!message && attachments.length === 0) return;
+            if (!currentModel) {
+                alert('Please select a model first');
+                return;
+            }
+            if (!apiKey) {
+                alert('Please enter your OpenRouter API key');
+                return;
+            }
+
+            // Disable send button
+            const sendBtn = document.getElementById('sendBtn');
+            sendBtn.disabled = true;
+            sendBtn.textContent = 'Sending...';
+
+            // Create user message
+            const userMessage = {
+                role: 'user',
+                content: message,
+                attachments: [...attachments]
+            };
+
+            // Add to current chat
+            if (!currentChatId) {
+                createNewChat();
+            }
+
+            chatData[currentChatId].messages.push(userMessage);
+            chatData[currentChatId].updatedAt = new Date().toISOString();
+            
+            // Update title if it's the first message
+            if (chatData[currentChatId].title === 'New Chat' && message) {
+                chatData[currentChatId].title = message.substring(0, 50) + (message.length > 50 ? '...' : '');
+            }
+
+            // Clear input
+            messageInput.value = '';
+            messageInput.style.height = 'auto';
+            attachments = [];
+            document.getElementById('attachmentsPreview').innerHTML = '';
+
+            saveData();
+            renderChatMessages();
+            loadChatsAndFolders();
+
+            // Show typing indicator
+            showTypingIndicator();
+
+            try {
+                // Prepare messages for API
+                const messages = chatData[currentChatId].messages.map(msg => ({
+                    role: msg.role,
+                    content: msg.content
+                }));
+
+                // Call OpenRouter API
+                const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${apiKey}`,
+                        'Content-Type': 'application/json',
+                        'HTTP-Referer': window.location.origin,
+                        'X-Title': 'OpenRouter Chat UI'
+                    },
+                    body: JSON.stringify({
+                        model: currentModel,
+                        messages: messages,
+                        temperature: 0.7
+                    })
+                });
+
+                if (!response.ok) {
+                    throw new Error(`API Error: ${response.status} ${response.statusText}`);
+                }
+
+                const data = await response.json();
+                const assistantMessage = {
+                    role: 'assistant',
+                    content: data.choices[0].message.content
+                };
+
+                // Add assistant response
+                chatData[currentChatId].messages.push(assistantMessage);
+                chatData[currentChatId].updatedAt = new Date().toISOString();
+                chatData[currentChatId].model = currentModel;
+
+                saveData();
+                hideTypingIndicator();
+                renderChatMessages();
+
+            } catch (error) {
+                console.error('API Error:', error);
+                hideTypingIndicator();
+                
+                const errorMessage = {
+                    role: 'assistant',
+                    content: `Error: ${error.message}`
+                };
+                
+                chatData[currentChatId].messages.push(errorMessage);
+                saveData();
+                renderChatMessages();
+            }
+
+            // Re-enable send button
+            sendBtn.disabled = false;
+            sendBtn.textContent = 'Send';
+        }
+
+        function showTypingIndicator() {
+            const chatArea = document.getElementById('chatArea');
+            const typingEl = document.createElement('div');
+            typingEl.className = 'message assistant';
+            typingEl.id = 'typingIndicator';
+            
+            const avatar = document.createElement('div');
+            avatar.className = 'message-avatar';
+            avatar.textContent = 'AI';
+            
+            const content = document.createElement('div');
+            content.className = 'typing-indicator';
+            content.innerHTML = `
+                <div class="typing-dots">
+                    <div class="typing-dot"></div>
+                    <div class="typing-dot"></div>
+                    <div class="typing-dot"></div>
+                </div>
+            `;
+            
+            typingEl.appendChild(avatar);
+            typingEl.appendChild(content);
+            chatArea.appendChild(typingEl);
+            chatArea.scrollTop = chatArea.scrollHeight;
+        }
+
+        function hideTypingIndicator() {
+            const typingEl = document.getElementById('typingIndicator');
+            if (typingEl) {
+                typingEl.remove();
+            }
+        }
+
+        function handleFileSelection(e) {
+            const files = Array.from(e.target.files);
+            files.forEach(file => {
+                if (file.size > 10 * 1024 * 1024) { // 10MB limit
+                    alert(`File ${file.name} is too large. Maximum size is 10MB.`);
+                    return;
+                }
+
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    attachments.push({
+                        name: file.name,
+                        type: file.type,
+                        size: file.size,
+                        data: e.target.result
+                    });
+                    updateAttachmentsPreview();
+                };
+                reader.readAsDataURL(file);
+            });
+        }
+
+        function updateAttachmentsPreview() {
+            const preview = document.getElementById('attachmentsPreview');
+            preview.innerHTML = '';
+            
+            attachments.forEach((attachment, index) => {
+                const item = document.createElement('div');
+                item.className = 'attachment-preview-item';
+                item.innerHTML = `
+                    📎 ${attachment.name}
+                    <button class="remove-attachment" onclick="removeAttachment(${index})">×</button>
+                `;
+                preview.appendChild(item);
+            });
+        }
+
+        function removeAttachment(index) {
+            attachments.splice(index, 1);
+            updateAttachmentsPreview();
+        }
+
+        function loadChatsAndFolders() {
+            const folderSection = document.getElementById('folderSection');
+            folderSection.innerHTML = '';
+
+            // Group chats by folder
+            const folderGroups = { null: [] };
+            Object.values(chatData).forEach(chat => {
+                const folderId = chat.folder || null;
+                if (!folderGroups[folderId]) {
+                    folderGroups[folderId] = [];
+                }
+                folderGroups[folderId].push(chat);
+            });
+
+            // Render folders and chats
+            Object.keys(folderGroups).forEach(folderId => {
+                const chats = folderGroups[folderId].sort((a, b) => 
+                    new Date(b.updatedAt) - new Date(a.updatedAt)
+                );
+
+                if (folderId && folderId !== 'null') {
+                    // Render folder
+                    const folderEl = document.createElement('div');
+                    folderEl.className = 'folder';
+                    
+                    const folderHeader = document.createElement('div');
+                    folderHeader.className = 'folder-header';
+                    folderHeader.innerHTML = `
+                        <span class="folder-icon">📁</span>
+                        <span class="folder-name">${folders[folderId] || 'Unnamed Folder'}</span>
+                        <div class="folder-actions">
+                            <button onclick="deleteFolder('${folderId}')" style="background:none;border:none;color:#ff6b6b;">🗑</button>
+                        </div>
+                    `;
+                    
+                    folderEl.appendChild(folderHeader);
+                    
+                    // Add chats to folder
+                    chats.forEach(chat => {
+                        const chatEl = createChatElement(chat);
+                        folderEl.appendChild(chatEl);
+                    });
+                    
+                    folderSection.appendChild(folderEl);
+                } else {
+                    // Render ungrouped chats
+                    chats.forEach(chat => {
+                        const chatEl = createChatElement(chat);
+                        folderSection.appendChild(chatEl);
+                    });
+                }
+            });
+        }
+
+        function createChatElement(chat) {
+            const chatEl = document.createElement('div');
+            chatEl.className = 'chat-item';
+            chatEl.onclick = () => switchToChat(chat.id);
+            chatEl.oncontextmenu = (e) => showContextMenu(e, chat.id);
+            
+            chatEl.innerHTML = `
+                <span class="chat-title">${chat.title}</span>
+                <div class="chat-actions">
+                    <button onclick="event.stopPropagation(); showFolderModalForChat('${chat.id}')" style="background:none;border:none;color:#666;">📁</button>
+                    <button onclick="event.stopPropagation(); deleteChat('${chat.id}')" style="background:none;border:none;color:#ff6b6b;">🗑</button>
+                </div>
+            `;
+            
+            return chatEl;
+        }
+
+        function updateChatSelection() {
+            document.querySelectorAll('.chat-item').forEach(item => {
+                item.classList.remove('active');
+            });
+            
+            if (currentChatId) {
+                const activeItem = document.querySelector(`[onclick*="${currentChatId}"]`);
+                if (activeItem) {
+                    activeItem.classList.add('active');
+                }
+            }
+        }
+
+        function showContextMenu(e, chatId) {
+            e.preventDefault();
+            const contextMenu = document.getElementById('contextMenu');
+            contextMenu.style.display = 'block';
+            contextMenu.style.left = e.pageX + 'px';
+            contextMenu.style.top = e.pageY + 'px';
+            contextMenu.dataset.chatId = chatId;
+        }
+
+        function hideContextMenu() {
+            document.getElementById('contextMenu').style.display = 'none';
+        }
+
+        function showFolderModal() {
+            if (!currentChatId) return;
+            showFolderModalForChat(currentChatId);
+        }
+
+        function showFolderModalForChat(chatId) {
+            document.getElementById('folderModal').style.display = 'block';
+            document.getElementById('folderModal').dataset.chatId = chatId;
+            
+            // Populate folder selector
+            const select = document.getElementById('folderSelect');
+            select.innerHTML = '<option value="">No folder</option>';
+            
+            Object.entries(folders).forEach(([id, name]) => {
+                const option = document.createElement('option');
+                option.value = id;
+                option.textContent = name;
+                if (chatData[chatId].folder === id) {
+                    option.selected = true;
+                }
+                select.appendChild(option);
+            });
+        }
+
+        function organizeChat() {
+            const modal = document.getElementById('folderModal');
+            const chatId = modal.dataset.chatId;
+            const selectedFolder = document.getElementById('folderSelect').value;
+            const newFolderName = document.getElementById('newFolderInput').value.trim();
+            
+            let folderId = selectedFolder;
+            
+            if (newFolderName) {
+                folderId = 'folder_' + Date.now();
+                folders[folderId] = newFolderName;
+            }
+            
+            chatData[chatId].folder = folderId || null;
+            
+            saveData();
+            loadChatsAndFolders();
+            closeModal('folderModal');
+            
+            // Clear new folder input
+            document.getElementById('newFolderInput').value = '';
+        }
+
+        function deleteFolder(folderId) {
+            if (confirm('Delete this folder? Chats will be moved to the main area.')) {
+                // Move all chats in this folder to main area
+                Object.values(chatData).forEach(chat => {
+                    if (chat.folder === folderId) {
+                        chat.folder = null;
+                    }
+                });
+                
+                delete folders[folderId];
+                saveData();
+                loadChatsAndFolders();
+            }
+        }
+
+        function deleteChat(chatId) {
+            if (confirm('Delete this chat permanently?')) {
+                delete chatData[chatId];
+                
+                if (currentChatId === chatId) {
+                    currentChatId = null;
+                    renderChatMessages();
+                }
+                
+                saveData();
+                loadChatsAndFolders();
+            }
+        }
+
+        function showExportModal() {
+            document.getElementById('exportModal').style.display = 'block';
+        }
+
+        function exportCurrentChat() {
+            if (!currentChatId) return;
+            
+            const chat = chatData[currentChatId];
+            const markdown = generateChatMarkdown(chat);
+            
+            downloadMarkdown(markdown, `${chat.title}.md`);
+            closeModal('exportModal');
+        }
+
+        function exportAllChats() {
+            let allMarkdown = '# All Chats Export\n\n';
+            
+            Object.values(chatData)
+                .sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt))
+                .forEach(chat => {
+                    allMarkdown += generateChatMarkdown(chat);
+                    allMarkdown += '\n---\n\n';
+                });
+            
+            downloadMarkdown(allMarkdown, 'all_chats_export.md');
+            closeModal('exportModal');
+        }
+
+        function generateChatMarkdown(chat) {
+            let markdown = `# ${chat.title}\n\n`;
+            markdown += `**Model:** ${chat.model}\n`;
+            markdown += `**Created:** ${new Date(chat.createdAt).toLocaleString()}\n`;
+            markdown += `**Updated:** ${new Date(chat.updatedAt).toLocaleString()}\n\n`;
+            
+            chat.messages.forEach(message => {
+                const role = message.role === 'user' ? 'User' : 'Assistant';
+                markdown += `## ${role}\n\n${message.content}\n\n`;
+                
+                if (message.attachments && message.attachments.length > 0) {
+                    markdown += '**Attachments:**\n';
+                    message.attachments.forEach(att => {
+                        markdown += `- ${att.name} (${att.type})\n`;
+                    });
+                    markdown += '\n';
+                }
+            });
+            
+            return markdown;
+        }
+
+        function downloadMarkdown(content, filename) {
+            const blob = new Blob([content], { type: 'text/markdown' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = filename;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        }
+
+        function closeModal(modalId) {
+            document.getElementById(modalId).style.display = 'none';
+        }
+
+        function saveData() {
+            localStorage.setItem('openrouter_chats', JSON.stringify(chatData));
+            localStorage.setItem('openrouter_folders', JSON.stringify(folders));
+        }
+
+        // Initialize the app
+        init();
+    </script>
+</body>
+</html>
