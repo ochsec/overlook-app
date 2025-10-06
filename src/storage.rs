@@ -1,3 +1,21 @@
+//! Secure storage for Overlook application data.
+//!
+//! # Encryption Strategy
+//!
+//! Chat history and projects are encrypted using ChaCha20-Poly1305 AEAD.
+//! The master encryption key is stored:
+//! - **macOS/Windows/Linux with Secret Service**: System keyring (most secure)
+//! - **Raspberry Pi/Linux without keyring**: File-based storage at `~/.config/overlook/.master_key`
+//!
+//! API keys are stored unencrypted in `api_keys.json` as they need to be available
+//! even if the keyring is unavailable.
+//!
+//! # File Locations
+//!
+//! - macOS: `~/Library/Application Support/overlook/`
+//! - Linux: `~/.config/overlook/`
+//! - Windows: `%APPDATA%\overlook\`
+
 use crate::theme::ThemeType;
 use crate::types::{ChatMap, FolderMap, Project, ProjectMap, ProviderKeys};
 use anyhow::{anyhow, Context, Result};
@@ -229,6 +247,28 @@ impl Storage {
 }
 
 fn ensure_master_key() -> Result<[u8; MASTER_KEY_LEN]> {
+    // On Raspberry Pi, use file-based storage to avoid keyring blocking during GUI init
+    #[cfg(all(target_arch = "aarch64", target_os = "linux"))]
+    {
+        return ensure_file_based_master_key();
+    }
+
+    // Try keyring first (works on macOS, Windows, and Linux with Secret Service)
+    #[cfg(not(all(target_arch = "aarch64", target_os = "linux")))]
+    match try_keyring_master_key() {
+        Ok(key) => {
+            println!("✅ Using system keyring for encryption");
+            return Ok(key);
+        }
+        Err(e) => {
+            eprintln!("⚠️  Keyring unavailable ({}), falling back to file-based key storage", e);
+            // Fall back to file-based storage on systems without keyring support
+            return ensure_file_based_master_key();
+        }
+    }
+}
+
+fn try_keyring_master_key() -> Result<[u8; MASTER_KEY_LEN]> {
     let entry = master_key_entry()?;
     match entry.get_password() {
         Ok(secret) => {
@@ -249,8 +289,48 @@ fn ensure_master_key() -> Result<[u8; MASTER_KEY_LEN]> {
                 .map_err(|e| anyhow!("failed to store master key in keychain: {}", e))?;
             Ok(key)
         }
-        Err(e) => Err(anyhow!("failed to load master key from keychain: {}", e)),
+        Err(e) => Err(anyhow!("keyring error: {}", e)),
     }
+}
+
+fn ensure_file_based_master_key() -> Result<[u8; MASTER_KEY_LEN]> {
+    let data_dir = dirs::config_dir()
+        .ok_or_else(|| anyhow!("cannot determine config directory"))?;
+    let app_dir = data_dir.join("overlook");
+    std::fs::create_dir_all(&app_dir)?;
+    let key_file = app_dir.join(".master_key");
+
+    // Try to load existing key
+    if let Ok(encoded) = std::fs::read_to_string(&key_file) {
+        let decoded = BASE64_STANDARD
+            .decode(encoded.trim())
+            .context("stored key was not valid base64")?;
+        let key: [u8; MASTER_KEY_LEN] = decoded
+            .try_into()
+            .map_err(|_| anyhow!("stored key wrong length"))?;
+        return Ok(key);
+    }
+
+    // Generate new key
+    let mut key = [0u8; MASTER_KEY_LEN];
+    OsRng.fill_bytes(&mut key);
+    let encoded = BASE64_STANDARD.encode(key);
+
+    // Save with restrictive permissions (owner read/write only)
+    std::fs::write(&key_file, encoded)?;
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mut perms = std::fs::metadata(&key_file)?.permissions();
+        perms.set_mode(0o600); // Owner read/write only
+        std::fs::set_permissions(&key_file, perms)?;
+    }
+
+    println!("🔐 Created new file-based encryption key at {:?}", key_file);
+    println!("⚠️  Keep this file secure - it protects your chat data!");
+
+    Ok(key)
 }
 
 fn encrypt_blob(plaintext: &[u8], key: &[u8; MASTER_KEY_LEN]) -> Result<Vec<u8>> {
