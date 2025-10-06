@@ -9,6 +9,7 @@ use crate::types::{
 };
 use chrono::Utc;
 use eframe::egui;
+use egui_commonmark::CommonMarkCache;
 use poll_promise::Promise;
 use std::sync::mpsc;
 
@@ -74,6 +75,7 @@ pub struct OverlookApp {
     pub last_request_model: Option<String>,
     pub last_model_descriptor: Option<ModelDescriptor>,
     pub last_export_result: Option<Result<String, String>>, // Store result of last export
+    pub markdown_cache: CommonMarkCache,
     api_client: ApiClient,
 }
 
@@ -129,6 +131,7 @@ impl Default for OverlookApp {
             last_request_model: None,
             last_model_descriptor: None,
             last_export_result: None,
+            markdown_cache: CommonMarkCache::default(),
             api_client: ApiClient::new(),
         }
     }

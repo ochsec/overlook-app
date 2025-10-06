@@ -474,8 +474,11 @@ impl OverlookApp {
                             chat.messages.len()
                         };
 
-                        for message in chat.messages.iter().take(visible_count) {
-                            self.render_message(ui, message);
+                        // Clone messages to avoid borrow checker issues
+                        let messages_to_render: Vec<_> = chat.messages.iter().take(visible_count).cloned().collect();
+
+                        for message in messages_to_render {
+                            self.render_message(ui, &message);
                         }
 
                         // Show streaming message during both active streaming and character display phases
@@ -517,7 +520,7 @@ impl OverlookApp {
             });
     }
 
-    fn render_message(&self, ui: &mut egui::Ui, message: &crate::types::Message) {
+    fn render_message(&mut self, ui: &mut egui::Ui, message: &crate::types::Message) {
         ui.add_space(5.0);
 
         if message.role == "user" {
@@ -525,23 +528,18 @@ impl OverlookApp {
             ui.with_layout(egui::Layout::right_to_left(egui::Align::TOP), |ui| {
                 ui.add_space(20.0); // Right margin
 
-                let mut job = egui::text::LayoutJob::default();
-                job.append(
-                    &message.content,
-                    0.0,
-                    egui::TextFormat {
-                        color: self.current_theme.user_message_text,
-                        background: self.current_theme.user_message_bg,
-                        font_id: egui::FontId::new(self.font_size, egui::FontFamily::Proportional),
-                        ..Default::default()
-                    },
-                );
-
                 ui.allocate_ui_with_layout(
                     [ui.available_width() * 0.7, 0.0].into(),
                     egui::Layout::top_down(egui::Align::LEFT),
                     |ui| {
-                        ui.add(egui::Label::new(job).wrap().selectable(true));
+                        ui.style_mut().visuals.override_text_color = Some(self.current_theme.user_message_text);
+                        ui.visuals_mut().extreme_bg_color = self.current_theme.user_message_bg;
+
+                        // Suppress egui grid ID warnings in debug mode
+                        ui.ctx().options_mut(|o| o.warn_on_id_clash = false);
+
+                        egui_commonmark::CommonMarkViewer::new()
+                            .show(ui, &mut self.markdown_cache, &message.content);
                     },
                 );
             });
@@ -565,19 +563,14 @@ impl OverlookApp {
                             ui.add_space(2.0);
                         }
 
-                        let mut job = egui::text::LayoutJob::default();
-                        job.append(
-                            &message.content,
-                            0.0,
-                            egui::TextFormat {
-                                color: self.current_theme.assistant_message_text,
-                                background: self.current_theme.assistant_message_bg,
-                                font_id: egui::FontId::new(self.font_size, egui::FontFamily::Proportional),
-                                ..Default::default()
-                            },
-                        );
+                        ui.style_mut().visuals.override_text_color = Some(self.current_theme.assistant_message_text);
+                        ui.visuals_mut().extreme_bg_color = self.current_theme.assistant_message_bg;
 
-                        ui.add(egui::Label::new(job).wrap().selectable(true));
+                        // Suppress egui grid ID warnings in debug mode
+                        ui.ctx().options_mut(|o| o.warn_on_id_clash = false);
+
+                        egui_commonmark::CommonMarkViewer::new()
+                            .show(ui, &mut self.markdown_cache, &message.content);
                     },
                 );
             });
@@ -585,7 +578,7 @@ impl OverlookApp {
         ui.add_space(8.0);
     }
 
-    fn render_streaming_message(&self, ui: &mut egui::Ui) {
+    fn render_streaming_message(&mut self, ui: &mut egui::Ui) {
         ui.add_space(5.0);
 
         // Assistant streaming message - left aligned with gray background and typing indicator
@@ -607,39 +600,27 @@ impl OverlookApp {
                         ui.add_space(2.0);
                     }
 
-                    let mut job = egui::text::LayoutJob::default();
-                    job.append(
-                        &self.streaming_message,
-                        0.0,
-                        egui::TextFormat {
-                            color: self.current_theme.assistant_message_text,
-                            background: self.current_theme.assistant_message_bg,
-                            font_id: egui::FontId::new(self.font_size, egui::FontFamily::Proportional),
-                            ..Default::default()
-                        },
-                    );
+                    ui.style_mut().visuals.override_text_color = Some(self.current_theme.assistant_message_text);
+                    ui.visuals_mut().extreme_bg_color = self.current_theme.assistant_message_bg;
+
+                    // Suppress egui grid ID warnings in debug mode
+                    ui.ctx().options_mut(|o| o.warn_on_id_clash = false);
+
+                    // Render markdown content
+                    egui_commonmark::CommonMarkViewer::new()
+                        .show(ui, &mut self.markdown_cache, &self.streaming_message);
 
                     // Add a blinking cursor effect only while actively streaming
                     if !self.stream_completed {
                         let time = ui.input(|i| i.time);
                         if (time * 2.0) as i32 % 2 == 0 {
-                            job.append(
-                                "▊",
-                                0.0,
-                                egui::TextFormat {
-                                    color: self.current_theme.assistant_message_text,
-                                    background: self.current_theme.assistant_message_bg,
-                                    font_id: egui::FontId::new(
-                                        self.font_size,
-                                        egui::FontFamily::Proportional,
-                                    ),
-                                    ..Default::default()
-                                },
+                            ui.label(
+                                egui::RichText::new("▊")
+                                    .color(self.current_theme.assistant_message_text)
+                                    .background_color(self.current_theme.assistant_message_bg)
                             );
                         }
                     }
-
-                    ui.add(egui::Label::new(job).wrap().selectable(true));
                 },
             );
         });
