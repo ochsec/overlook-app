@@ -236,16 +236,56 @@ impl OverlookApp {
                 let is_selected = self.current_chat_id.as_ref() == Some(&chat.id);
 
                 ui.horizontal(|ui| {
-                    let button = egui::Button::new(&chat.title).fill(if is_selected {
-                        self.current_theme.accent
-                    } else {
-                        egui::Color32::TRANSPARENT
-                    });
+                    let available_width = ui.available_width();
+                    let button_area_width = 40.0; // Width for trash button area
+                    let title_width = available_width - button_area_width;
 
-                    if ui.add_sized([200.0, 30.0], button).clicked() {
+                    // Chat title button (left-aligned, takes most of the width)
+                    let (rect, response) = ui.allocate_exact_size(
+                        egui::vec2(title_width, 30.0),
+                        egui::Sense::click()
+                    );
+
+                    if is_selected {
+                        ui.painter().rect_filled(
+                            rect,
+                            4.0,
+                            self.current_theme.accent,
+                        );
+                    }
+
+                    let text_pos = rect.left_center() + egui::vec2(8.0, 0.0);
+                    ui.painter().text(
+                        text_pos,
+                        egui::Align2::LEFT_CENTER,
+                        &chat.title,
+                        egui::FontId::proportional(14.0),
+                        if is_selected {
+                            egui::Color32::WHITE
+                        } else {
+                            ui.style().visuals.text_color()
+                        },
+                    );
+
+                    if response.clicked() {
                         chat_to_select = Some(chat.id.clone());
                     }
 
+                    // Reserve space for button area and draw opaque background
+                    let cursor_before = ui.cursor().min;
+
+                    // Draw opaque background to cover text overflow
+                    let button_bg_rect = egui::Rect::from_min_size(
+                        cursor_before,
+                        egui::vec2(button_area_width, 30.0)
+                    );
+                    ui.painter().rect_filled(
+                        button_bg_rect,
+                        0.0,
+                        ui.style().visuals.window_fill(),
+                    );
+
+                    // Draw trash button
                     if ui.small_button("🗑").clicked() {
                         chat_to_delete = Some(chat.id.clone());
                     }
