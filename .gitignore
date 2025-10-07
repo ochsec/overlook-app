@@ -1,3 +1,11 @@
 /target
 /docs/file_samples/*
 **/.DS_Store
+
+# SearXNG deployment files (contain sensitive data)
+/docs/searxng.env
+/docs/searxng-cloud-init.yml
+/docs/.linode-deployment-info
+
+# Environment
+**/*.env
