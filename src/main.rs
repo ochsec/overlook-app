@@ -5,6 +5,7 @@ mod export;
 mod storage;
 mod theme;
 mod tokens;
+mod tools;
 mod types;
 mod ui;
 
@@ -12,6 +13,8 @@ use app::OverlookApp;
 use eframe::egui;
 
 fn main() -> Result<(), eframe::Error> {
+    // Load environment variables from .env file
+    dotenvy::dotenv().ok();
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_inner_size([1000.0, 700.0])

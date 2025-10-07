@@ -4,6 +4,7 @@ use crate::export::Exporter;
 use crate::storage::Storage;
 use crate::theme::{Theme, ThemeType};
 use crate::tokens::{TokenCounter, TokenUsage};
+use crate::tools::SearchOrchestrator;
 use crate::types::{
     Chat, ChatMap, Message, ModelDescriptor, Project, ProjectMap, ProviderKeys, ProviderKind,
 };
@@ -77,6 +78,7 @@ pub struct OverlookApp {
     pub last_export_result: Option<Result<String, String>>, // Store result of last export
     pub markdown_cache: CommonMarkCache,
     api_client: ApiClient,
+    search_orchestrator: SearchOrchestrator,
 }
 
 impl Default for OverlookApp {
@@ -133,6 +135,7 @@ impl Default for OverlookApp {
             last_export_result: None,
             markdown_cache: CommonMarkCache::default(),
             api_client: ApiClient::new(),
+            search_orchestrator: SearchOrchestrator::new(),
         }
     }
 }
@@ -190,6 +193,7 @@ impl OverlookApp {
             show_model_picker_modal: false,
             model_search_query: String::new(),
             favorite_models: Vec::new(),
+            search_orchestrator: SearchOrchestrator::new(),
             ..Default::default()
         };
         app.load_data();
@@ -693,8 +697,108 @@ impl OverlookApp {
         self.selected_attachments.clear();
         self.save_data();
 
-        // Start async API call
+        // Get model early for search decision
         let model = self.current_model.clone();
+
+        // Ask LLM if web search is needed
+        let user_query = user_message.content.clone();
+        if let Some(rt) = &self.rt {
+            let decision_prompt = crate::tools::SearchOrchestrator::create_search_decision_message(&user_query);
+
+            // Create a temporary message history for the decision call - just one user message
+            let decision_messages = vec![
+                Message {
+                    role: "user".to_string(),
+                    content: decision_prompt,
+                    timestamp: Utc::now(),
+                    attachments: Vec::new(),
+                    provider: None,
+                    model: None,
+                },
+            ];
+
+            let decision_provider = provider;
+            let decision_api_key = api_key.clone();
+            let decision_model = model.clone();
+            let api_client = crate::api::ApiClient::new();
+
+            println!("🤔 Asking LLM if search is needed...");
+
+            // Call LLM to decide if search is needed
+            let search_decision_result = rt.block_on(async {
+                api_client
+                    .send_chat_message(decision_provider, &decision_api_key, &decision_model, decision_messages)
+                    .await
+            });
+
+            match &search_decision_result {
+                Ok(decision_response) => {
+                    println!("📝 LLM decision response: {}", decision_response);
+                    if decision_response.trim().is_empty() {
+                        eprintln!("⚠️  Warning: LLM returned empty response for search decision");
+                    }
+                }
+                Err(e) => {
+                    eprintln!("❌ Search decision API call failed: {}", e);
+                }
+            }
+
+            if let Ok(decision_response) = search_decision_result {
+
+                match crate::tools::SearchOrchestrator::parse_search_decision(&decision_response) {
+                    Ok(decision) if decision.search => {
+                        if let Some(search_query) = decision.query {
+                            println!("🔍 LLM requested search for: {}", search_query);
+
+                            let search_orchestrator = self.search_orchestrator.clone();
+
+                            // Perform search
+                            match rt.block_on(async {
+                                search_orchestrator.search_and_format(&search_query).await
+                            }) {
+                                Ok(search_results) => {
+                                    let result_length = search_results.len();
+                                    let preview = search_results.chars().take(200).collect::<String>();
+                                    println!("✅ Web search completed: {} characters of results", result_length);
+                                    println!("📄 Preview: {}...", preview);
+
+                                    // Create a system message with search results
+                                    let search_message = Message {
+                                        role: "system".to_string(),
+                                        content: search_results,
+                                        timestamp: Utc::now(),
+                                        attachments: Vec::new(),
+                                        provider: None,
+                                        model: None,
+                                    };
+
+                                    // Add search results to the chat
+                                    if let Some(chat) = self.chats.get_mut(&chat_id) {
+                                        chat.messages.push(search_message.clone());
+                                        chat.updated_at = Utc::now();
+                                        println!("💾 Search results added to chat. Total messages: {}", chat.messages.len());
+                                    }
+                                    self.save_data();
+                                }
+                                Err(e) => {
+                                    eprintln!("❌ Web search failed: {}", e);
+                                }
+                            }
+                        }
+                    }
+                    Ok(_) => {
+                        println!("ℹ️  LLM decided search is not needed");
+                    }
+                    Err(e) => {
+                        eprintln!("⚠️  Failed to parse search decision: {}", e);
+                    }
+                }
+            } else {
+                eprintln!("⚠️  Failed to get search decision from LLM");
+            }
+        }
+
+        // Start async API call
         let history = self.chats[&chat_id].messages.clone();
 
         let descriptor = self
