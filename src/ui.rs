@@ -261,7 +261,7 @@ impl OverlookApp {
                         &chat.title,
                         egui::FontId::proportional(14.0),
                         if is_selected {
-                            egui::Color32::WHITE
+                            self.current_theme.button_primary_text
                         } else {
                             ui.style().visuals.text_color()
                         },
@@ -977,7 +977,7 @@ impl OverlookApp {
                 &model.name,
                 egui::FontId::proportional(14.0),
                 if is_selected {
-                    egui::Color32::WHITE
+                    self.current_theme.button_primary_text
                 } else {
                     ui.style().visuals.text_color()
                 },
