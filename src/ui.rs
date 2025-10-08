@@ -523,6 +523,12 @@ impl OverlookApp {
     fn render_message(&mut self, ui: &mut egui::Ui, message: &crate::types::Message) {
         ui.add_space(5.0);
 
+        // Handle search results specially with collapsible UI
+        if message.role == "system" && message.content.starts_with("# Web Search Results") {
+            self.render_search_results(ui, message);
+            return;
+        }
+
         if message.role == "user" {
             // User message - right aligned with blue background
             ui.with_layout(egui::Layout::right_to_left(egui::Align::TOP), |ui| {
@@ -575,6 +581,64 @@ impl OverlookApp {
                 );
             });
         }
+        ui.add_space(8.0);
+    }
+
+    fn render_search_results(&mut self, ui: &mut egui::Ui, message: &crate::types::Message) {
+        // Create a unique ID for this message using timestamp
+        let message_id = format!("{}", message.timestamp.timestamp_millis());
+
+        // Count results by counting "## Result" occurrences
+        let result_count = message.content.matches("## Result").count();
+
+        // Check if expanded
+        let is_expanded = self.expanded_search_results.contains(&message_id);
+
+        ui.horizontal(|ui| {
+            ui.add_space(20.0); // Left margin
+
+            ui.allocate_ui_with_layout(
+                [ui.available_width() * 0.9, 0.0].into(),
+                egui::Layout::top_down(egui::Align::LEFT),
+                |ui| {
+                    // Collapsible header
+                    let header_text = if is_expanded {
+                        format!("🔍 Web Search Results ({} results) ▼ Hide", result_count)
+                    } else {
+                        format!("🔍 Web Search Results ({} results) ▶ Show", result_count)
+                    };
+
+                    let header_response = ui.add(
+                        egui::Button::new(header_text)
+                            .fill(egui::Color32::from_rgb(40, 40, 50))
+                            .min_size(egui::vec2(ui.available_width(), 30.0))
+                    );
+
+                    if header_response.clicked() {
+                        if is_expanded {
+                            self.expanded_search_results.remove(&message_id);
+                        } else {
+                            self.expanded_search_results.insert(message_id.clone());
+                        }
+                    }
+
+                    // Show full content if expanded
+                    if is_expanded {
+                        ui.add_space(8.0);
+
+                        ui.style_mut().visuals.override_text_color = Some(egui::Color32::from_rgb(200, 200, 200));
+                        ui.visuals_mut().extreme_bg_color = egui::Color32::from_rgb(30, 30, 40);
+
+                        // Suppress egui grid ID warnings
+                        ui.ctx().options_mut(|o| o.warn_on_id_clash = false);
+
+                        egui_commonmark::CommonMarkViewer::new()
+                            .show(ui, &mut self.markdown_cache, &message.content);
+                    }
+                },
+            );
+        });
+
         ui.add_space(8.0);
     }
 

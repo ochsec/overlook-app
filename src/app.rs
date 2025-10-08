@@ -12,6 +12,7 @@ use chrono::Utc;
 use eframe::egui;
 use egui_commonmark::CommonMarkCache;
 use poll_promise::Promise;
+use std::collections::HashSet;
 use std::sync::mpsc;
 
 #[derive(Clone, Copy, PartialEq)]
@@ -79,6 +80,7 @@ pub struct OverlookApp {
     pub markdown_cache: CommonMarkCache,
     api_client: ApiClient,
     search_orchestrator: SearchOrchestrator,
+    pub expanded_search_results: HashSet<String>, // Track which search result messages are expanded
 }
 
 impl Default for OverlookApp {
@@ -136,6 +138,7 @@ impl Default for OverlookApp {
             markdown_cache: CommonMarkCache::default(),
             api_client: ApiClient::new(),
             search_orchestrator: SearchOrchestrator::new(),
+            expanded_search_results: HashSet::new(),
         }
     }
 }
@@ -194,6 +197,7 @@ impl OverlookApp {
             model_search_query: String::new(),
             favorite_models: Vec::new(),
             search_orchestrator: SearchOrchestrator::new(),
+            expanded_search_results: HashSet::new(),
             ..Default::default()
         };
         app.load_data();
