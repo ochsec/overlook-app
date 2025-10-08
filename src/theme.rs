@@ -150,11 +150,15 @@ impl Theme {
         // Apply theme colors to egui's visual style
         let visuals = &mut style.visuals;
 
-        // Basic colors
-        visuals.override_text_color = Some(self.text_primary);
+        // Basic colors - Set ALL text color fields for proper contrast
+        visuals.override_text_color = Some(self.text_primary);  // Main text color
+        visuals.weak_text_color = Some(self.text_secondary);  // Secondary/muted text
         visuals.panel_fill = self.surface;
         visuals.window_fill = self.surface;
         visuals.faint_bg_color = self.sidebar_background;
+
+        // Set text cursor color
+        visuals.text_cursor.stroke.color = self.text_primary;
 
         // Widget colors - Fix contrast issues
         // Noninteractive widgets (labels, etc.)
@@ -197,6 +201,12 @@ impl Theme {
 
         // Code background for better text contrast
         visuals.code_bg_color = self.assistant_message_bg;
+
+        // Text edit (input box) colors - CRITICAL for light mode readability
+        visuals.extreme_bg_color = self.input_bg;
+        visuals.widgets.inactive.weak_bg_fill = self.input_bg;
+        visuals.widgets.hovered.weak_bg_fill = self.input_bg;
+        visuals.widgets.active.weak_bg_fill = self.input_bg;
 
         // Window shadow
         visuals.window_shadow.color = egui::Color32::from_black_alpha(100);

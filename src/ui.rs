@@ -601,7 +601,7 @@ impl OverlookApp {
                 [ui.available_width() * 0.9, 0.0].into(),
                 egui::Layout::top_down(egui::Align::LEFT),
                 |ui| {
-                    // Collapsible header
+                    // Collapsible header with proper theme colors
                     let header_text = if is_expanded {
                         format!("🔍 Web Search Results ({} results) ▼ Hide", result_count)
                     } else {
@@ -609,9 +609,12 @@ impl OverlookApp {
                     };
 
                     let header_response = ui.add(
-                        egui::Button::new(header_text)
-                            .fill(egui::Color32::from_rgb(40, 40, 50))
-                            .min_size(egui::vec2(ui.available_width(), 30.0))
+                        egui::Button::new(
+                            egui::RichText::new(header_text)
+                                .color(self.current_theme.assistant_message_text)
+                        )
+                        .fill(self.current_theme.assistant_message_bg)
+                        .min_size(egui::vec2(ui.available_width(), 30.0))
                     );
 
                     if header_response.clicked() {
@@ -626,8 +629,8 @@ impl OverlookApp {
                     if is_expanded {
                         ui.add_space(8.0);
 
-                        ui.style_mut().visuals.override_text_color = Some(egui::Color32::from_rgb(200, 200, 200));
-                        ui.visuals_mut().extreme_bg_color = egui::Color32::from_rgb(30, 30, 40);
+                        ui.style_mut().visuals.override_text_color = Some(self.current_theme.assistant_message_text);
+                        ui.visuals_mut().extreme_bg_color = self.current_theme.assistant_message_bg;
 
                         // Suppress egui grid ID warnings
                         ui.ctx().options_mut(|o| o.warn_on_id_clash = false);
