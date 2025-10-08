@@ -393,7 +393,7 @@ impl OverlookApp {
                 ui.label(
                     egui::RichText::new("← add a key in Settings")
                         .italics()
-                        .color(egui::Color32::GRAY),
+                        .color(self.current_theme.text_secondary),
                 );
             }
 
@@ -492,7 +492,7 @@ impl OverlookApp {
                                 ui.add_space(20.0);
                                 ui.label(
                                     egui::RichText::new("🔄 AI is streaming...")
-                                        .color(egui::Color32::GRAY)
+                                        .color(self.current_theme.text_secondary)
                                         .italics(),
                                 );
                             });
@@ -501,7 +501,7 @@ impl OverlookApp {
                                 ui.add_space(20.0);
                                 ui.label(
                                     egui::RichText::new("AI is typing...")
-                                        .color(egui::Color32::GRAY)
+                                        .color(self.current_theme.text_secondary)
                                         .italics(),
                                 );
                             });
@@ -563,7 +563,7 @@ impl OverlookApp {
                             ui.label(
                                 egui::RichText::new(format!("{}: {}", provider.display_name(), model))
                                     .size(self.font_size * 0.75)
-                                    .color(egui::Color32::GRAY)
+                                    .color(self.current_theme.text_secondary)
                                     .italics(),
                             );
                             ui.add_space(2.0);
@@ -661,7 +661,7 @@ impl OverlookApp {
                         ui.label(
                             egui::RichText::new(format!("{}: {}", provider.display_name(), model))
                                 .size(self.font_size * 0.75)
-                                .color(egui::Color32::GRAY)
+                                .color(self.current_theme.text_secondary)
                                 .italics(),
                         );
                         ui.add_space(2.0);
@@ -995,7 +995,7 @@ impl OverlookApp {
                 ui.label(
                     egui::RichText::new(format!("{}k", context_len / 1000))
                         .size(11.0)
-                        .color(egui::Color32::GRAY)
+                        .color(self.current_theme.text_secondary)
                 );
             }
         })
