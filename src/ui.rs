@@ -538,8 +538,9 @@ impl OverlookApp {
                     [ui.available_width() * 0.7, 0.0].into(),
                     egui::Layout::top_down(egui::Align::LEFT),
                     |ui| {
-                        ui.style_mut().visuals.override_text_color = Some(self.current_theme.user_message_text);
-                        ui.visuals_mut().extreme_bg_color = self.current_theme.user_message_bg;
+                        let visuals = &mut ui.style_mut().visuals;
+                        visuals.override_text_color = Some(self.current_theme.user_message_text);
+                        visuals.extreme_bg_color = self.current_theme.user_message_bg;
 
                         // Suppress egui grid ID warnings in debug mode
                         ui.ctx().options_mut(|o| o.warn_on_id_clash = false);
@@ -569,8 +570,9 @@ impl OverlookApp {
                             ui.add_space(2.0);
                         }
 
-                        ui.style_mut().visuals.override_text_color = Some(self.current_theme.assistant_message_text);
-                        ui.visuals_mut().extreme_bg_color = self.current_theme.assistant_message_bg;
+                        let visuals = &mut ui.style_mut().visuals;
+                        visuals.override_text_color = Some(self.current_theme.assistant_message_text);
+                        visuals.extreme_bg_color = self.current_theme.assistant_message_bg;
 
                         // Suppress egui grid ID warnings in debug mode
                         ui.ctx().options_mut(|o| o.warn_on_id_clash = false);
@@ -629,8 +631,9 @@ impl OverlookApp {
                     if is_expanded {
                         ui.add_space(8.0);
 
-                        ui.style_mut().visuals.override_text_color = Some(self.current_theme.assistant_message_text);
-                        ui.visuals_mut().extreme_bg_color = self.current_theme.assistant_message_bg;
+                        let visuals = &mut ui.style_mut().visuals;
+                        visuals.override_text_color = Some(self.current_theme.assistant_message_text);
+                        visuals.extreme_bg_color = self.current_theme.assistant_message_bg;
 
                         // Suppress egui grid ID warnings
                         ui.ctx().options_mut(|o| o.warn_on_id_clash = false);

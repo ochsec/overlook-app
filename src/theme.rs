@@ -141,18 +141,21 @@ impl Theme {
 
     pub fn apply_to_egui_style(&self, style: &mut egui::Style, font_size: f32) {
         // Start with appropriate base theme (dark or light)
-        style.visuals = if matches!(self, Self { background, .. } if background.r() < 128) {
+        let mut base_visuals = if matches!(self, Self { background, .. } if background.r() < 128) {
             egui::Visuals::dark() // Use dark base for dark themes
         } else {
             egui::Visuals::light() // Use light base for light themes
         };
 
+        // CRITICAL: For light theme, ensure text_color() returns dark text
+        // DO NOT set override_text_color here - it interferes with per-message colors
+
+        style.visuals = base_visuals;
+
         // Apply theme colors to egui's visual style
         let visuals = &mut style.visuals;
 
         // Basic colors - Set ALL text color fields for proper contrast
-        // Note: override_text_color is NOT set here - it's set per-message in ui.rs
-        // to allow different colors for user vs assistant messages
         visuals.weak_text_color = Some(self.text_secondary);  // Secondary/muted text
         visuals.panel_fill = self.surface;
         visuals.window_fill = self.surface;
