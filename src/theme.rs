@@ -151,7 +151,8 @@ impl Theme {
         let visuals = &mut style.visuals;
 
         // Basic colors - Set ALL text color fields for proper contrast
-        visuals.override_text_color = Some(self.text_primary);  // Main text color
+        // Note: override_text_color is NOT set here - it's set per-message in ui.rs
+        // to allow different colors for user vs assistant messages
         visuals.weak_text_color = Some(self.text_secondary);  // Secondary/muted text
         visuals.panel_fill = self.surface;
         visuals.window_fill = self.surface;
