@@ -181,8 +181,10 @@ impl Theme {
         visuals.widgets.hovered.bg_stroke.color = self.accent;
 
         // Active/pressed widgets
+        // CRITICAL: active.fg_stroke.color is used by strong_text_color() for markdown bold/headings!
+        // It should be high-contrast text on accent background, BUT also work for inline strong text
         visuals.widgets.active.bg_fill = self.accent;
-        visuals.widgets.active.fg_stroke.color = self.button_primary_text;
+        visuals.widgets.active.fg_stroke.color = self.text_primary; // Use theme text color, not white!
         visuals.widgets.active.bg_stroke.color = self.accent;
 
         // Open widgets (like opened ComboBoxes)
