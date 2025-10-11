@@ -9,3 +9,4 @@
 
 # Environment
 **/*.env
+searxng/.linode-deployment-info
