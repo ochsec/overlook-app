@@ -141,7 +141,7 @@ impl Theme {
 
     pub fn apply_to_egui_style(&self, style: &mut egui::Style, font_size: f32) {
         // Start with appropriate base theme (dark or light)
-        let mut base_visuals = if matches!(self, Self { background, .. } if background.r() < 128) {
+        let base_visuals = if matches!(self, Self { background, .. } if background.r() < 128) {
             egui::Visuals::dark() // Use dark base for dark themes
         } else {
             egui::Visuals::light() // Use light base for light themes

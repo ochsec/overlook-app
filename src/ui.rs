@@ -477,8 +477,8 @@ impl OverlookApp {
                         // Clone messages to avoid borrow checker issues
                         let messages_to_render: Vec<_> = chat.messages.iter().take(visible_count).cloned().collect();
 
-                        for message in messages_to_render {
-                            self.render_message(ui, &message);
+                        for message in messages_to_render.iter() {
+                            self.render_message(ui, message);
                         }
 
                         // Show streaming message during both active streaming and character display phases
@@ -538,15 +538,21 @@ impl OverlookApp {
                     [ui.available_width() * 0.7, 0.0].into(),
                     egui::Layout::top_down(egui::Align::LEFT),
                     |ui| {
-                        let visuals = &mut ui.style_mut().visuals;
-                        visuals.override_text_color = Some(self.current_theme.user_message_text);
-                        visuals.extreme_bg_color = self.current_theme.user_message_bg;
+                        // Create a frame with the user message background color
+                        egui::Frame::new()
+                            .fill(self.current_theme.user_message_bg)
+                            .inner_margin(10.0)
+                            .corner_radius(8.0)
+                            .show(ui, |ui| {
+                                let visuals = &mut ui.style_mut().visuals;
+                                visuals.override_text_color = Some(self.current_theme.user_message_text);
 
-                        // Suppress egui grid ID warnings in debug mode
-                        ui.ctx().options_mut(|o| o.warn_on_id_clash = false);
+                                // Suppress egui grid ID warnings in debug mode
+                                ui.ctx().options_mut(|o| o.warn_on_id_clash = false);
 
-                        egui_commonmark::CommonMarkViewer::new()
-                            .show(ui, &mut self.markdown_cache, &message.content);
+                                egui_commonmark::CommonMarkViewer::new()
+                                    .show(ui, &mut self.markdown_cache, &message.content);
+                            });
                     },
                 );
             });
