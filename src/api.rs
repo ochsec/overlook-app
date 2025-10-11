@@ -272,6 +272,16 @@ impl ApiClient {
             id: String,
         }
 
+        #[derive(Deserialize)]
+        struct CompletionResponse {
+            model_info: Option<ModelInfo>,
+        }
+
+        #[derive(Deserialize)]
+        struct ModelInfo {
+            context_length: Option<usize>,
+        }
+
         let base_url = base_url.trim_end_matches('/').to_string();
         let client = self.client.clone();
 
@@ -299,21 +309,46 @@ impl ApiClient {
                     return Err(error);
                 }
 
-                let mut models: Vec<ModelDescriptor> = response
-                    .json::<LMStudioModelList>()
-                    .await?
-                    .data
-                    .into_iter()
-                    .map(|model| ModelDescriptor {
+                let model_list: LMStudioModelList = response.json().await?;
+
+                // For each model, query the /api/v0/completions endpoint to get context_length
+                let mut models: Vec<ModelDescriptor> = Vec::new();
+                for model in model_list.data {
+                    let completions_endpoint = format!("{}/api/v0/completions", base_url);
+
+                    // Make a minimal completion request to get model_info
+                    let context_length = match client
+                        .post(&completions_endpoint)
+                        .header("Content-Type", "application/json")
+                        .json(&json!({
+                            "model": model.id,
+                            "prompt": "test",
+                            "max_tokens": 1,
+                            "stream": false
+                        }))
+                        .send()
+                        .await
+                    {
+                        Ok(resp) => {
+                            if let Ok(completion) = resp.json::<CompletionResponse>().await {
+                                completion.model_info.and_then(|info| info.context_length)
+                            } else {
+                                None
+                            }
+                        }
+                        Err(_) => None,
+                    };
+
+                    models.push(ModelDescriptor {
                         name: model.id.clone(),
                         id: model.id.clone(),
                         description: Some("LM Studio model".to_string()),
                         provider: ProviderKind::LMStudio,
-                        context_length: Some(4096),
+                        context_length,
                         max_output_tokens: None,
                         tokenizer: None,
-                    })
-                    .collect();
+                    });
+                }
 
                 models.sort_by(|a, b| a.name.cmp(&b.name));
                 Ok(models)
@@ -558,6 +593,16 @@ impl ApiClient {
         model: &str,
         messages: &[Message],
     ) -> Result<String> {
+        #[derive(Deserialize)]
+        struct CompletionResponse {
+            choices: Vec<Choice>,
+        }
+
+        #[derive(Deserialize)]
+        struct Choice {
+            text: String,
+        }
+
         let base_url = base_url.trim_end_matches('/').to_string();
         let model = model.to_string();
         let messages = messages.to_vec();
@@ -569,11 +614,15 @@ impl ApiClient {
             let messages = messages.clone();
             let client = client.clone();
             async move {
-                let endpoint = format!("{}/v1/chat/completions", base_url);
+                let endpoint = format!("{}/api/v0/completions", base_url);
+                let prompt = messages_to_prompt(&messages);
+
                 let request_body = json!({
                     "model": model,
-                    "messages": openai_style_messages(&messages),
-                    "temperature": 0.7
+                    "prompt": prompt,
+                    "temperature": 0.7,
+                    "max_tokens": 2048,
+                    "stream": false
                 });
 
                 let response = client
@@ -597,7 +646,12 @@ impl ApiClient {
                     return Err(error);
                 }
 
-                extract_openai_style_response(response.json().await?)
+                let completion: CompletionResponse = response.json().await?;
+                if let Some(choice) = completion.choices.first() {
+                    Ok(choice.text.clone())
+                } else {
+                    Err(anyhow!("No completion returned from LM Studio"))
+                }
             }
         })
         .await
@@ -689,11 +743,14 @@ impl ApiClient {
                     let messages = messages.clone();
                     let client = client.clone();
                     async move {
-                        let endpoint = format!("{}/v1/chat/completions", base_url);
+                        let endpoint = format!("{}/api/v0/completions", base_url);
+                        let prompt = messages_to_prompt(&messages);
+
                         let request_body = json!({
                             "model": model,
-                            "messages": openai_style_messages(&messages),
+                            "prompt": prompt,
                             "temperature": 0.7,
+                            "max_tokens": 2048,
                             "stream": true
                         });
 
@@ -738,7 +795,17 @@ impl ApiClient {
                                 }
 
                                 match serde_json::from_str::<Value>(&event.data) {
-                                    Ok(parsed) => extract_openai_stream_chunk(&parsed),
+                                    Ok(parsed) => {
+                                        // Extract text from choices array
+                                        if let Some(choice) = parsed["choices"].as_array().and_then(|arr| arr.first()) {
+                                            if let Some(text) = choice["text"].as_str() {
+                                                if !text.is_empty() {
+                                                    return Some(Ok(text.to_string()));
+                                                }
+                                            }
+                                        }
+                                        None
+                                    }
                                     Err(e) => {
                                         eprintln!(
                                             "Failed to parse LM Studio SSE JSON: {} for data: {}",
@@ -1092,6 +1159,33 @@ fn openai_style_messages(messages: &[Message]) -> Vec<Value> {
             })
         })
         .collect()
+}
+
+/// Converts a message array to a single prompt string for LM Studio's REST API
+fn messages_to_prompt(messages: &[Message]) -> String {
+    let mut prompt = String::new();
+
+    for message in messages {
+        match message.role.as_str() {
+            "system" => {
+                prompt.push_str(&format!("System: {}\n\n", message.content));
+            }
+            "user" => {
+                prompt.push_str(&format!("User: {}\n\n", message.content));
+            }
+            "assistant" => {
+                prompt.push_str(&format!("Assistant: {}\n\n", message.content));
+            }
+            _ => {
+                prompt.push_str(&format!("{}: {}\n\n", message.role, message.content));
+            }
+        }
+    }
+
+    // Add assistant prompt to signal the model to respond
+    prompt.push_str("Assistant:");
+
+    prompt
 }
 
 fn anthropic_request_body(messages: &[Message], model: &str, stream: bool) -> Value {
