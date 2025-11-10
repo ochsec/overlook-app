@@ -1,4 +1,5 @@
 use crate::app::{OverlookApp, ViewMode};
+use crate::markdown_renderer::MarkdownRenderer;
 use crate::theme::{Theme, ThemeType};
 use crate::types::ProviderKind;
 use eframe::egui;
@@ -33,23 +34,23 @@ impl eframe::App for OverlookApp {
 impl OverlookApp {
     fn render_menu_bar(&mut self, ctx: &egui::Context) {
         egui::TopBottomPanel::top("menu_bar").show(ctx, |ui| {
-            egui::MenuBar::new().ui(ui, |ui| {
+            egui::menu::bar(ui, |ui| {
                 ui.menu_button("View", |ui| {
                     if ui.selectable_label(self.current_view == ViewMode::Chat, "💬 Chat").clicked() {
                         self.current_view = ViewMode::Chat;
-                        ui.close();
+                        ui.close_menu();
                     }
                     if ui.selectable_label(self.current_view == ViewMode::Settings, "⚙️ Settings").clicked() {
                         self.current_view = ViewMode::Settings;
-                        ui.close();
+                        ui.close_menu();
                     }
                     if ui.selectable_label(self.current_view == ViewMode::Export, "📥 Export").clicked() {
                         self.current_view = ViewMode::Export;
-                        ui.close();
+                        ui.close_menu();
                     }
                     if ui.selectable_label(self.current_view == ViewMode::Organize, "📁 Organize").clicked() {
                         self.current_view = ViewMode::Organize;
-                        ui.close();
+                        ui.close_menu();
                     }
                 });
             });
@@ -534,24 +535,31 @@ impl OverlookApp {
             ui.with_layout(egui::Layout::right_to_left(egui::Align::TOP), |ui| {
                 ui.add_space(20.0); // Right margin
 
+                let max_width = ui.available_width() * 0.7;
                 ui.allocate_ui_with_layout(
-                    [ui.available_width() * 0.7, 0.0].into(),
+                    [max_width, 0.0].into(),
                     egui::Layout::top_down(egui::Align::LEFT),
                     |ui| {
+                        ui.set_max_width(max_width);
+
                         // Create a frame with the user message background color
                         egui::Frame::new()
                             .fill(self.current_theme.user_message_bg)
                             .inner_margin(10.0)
                             .corner_radius(8.0)
                             .show(ui, |ui| {
+                                ui.set_max_width(max_width - 20.0); // Account for margins
+
+                                // Enable text wrapping
+                                ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Wrap);
+
                                 let visuals = &mut ui.style_mut().visuals;
                                 visuals.override_text_color = Some(self.current_theme.user_message_text);
 
                                 // Suppress egui grid ID warnings in debug mode
                                 ui.ctx().options_mut(|o| o.warn_on_id_clash = false);
 
-                                egui_commonmark::CommonMarkViewer::new()
-                                    .show(ui, &mut self.markdown_cache, &message.content);
+                                MarkdownRenderer::new().show(ui, &message.content);
                             });
                     },
                 );
@@ -561,10 +569,13 @@ impl OverlookApp {
             ui.horizontal(|ui| {
                 ui.add_space(20.0); // Left margin
 
+                let max_width = ui.available_width() * 0.8;
                 ui.allocate_ui_with_layout(
-                    [ui.available_width() * 0.8, 0.0].into(),
+                    [max_width, 0.0].into(),
                     egui::Layout::top_down(egui::Align::LEFT),
                     |ui| {
+                        ui.set_max_width(max_width);
+
                         // Show model indicator badge if available
                         if let (Some(provider), Some(model)) = (&message.provider, &message.model) {
                             ui.label(
@@ -576,6 +587,9 @@ impl OverlookApp {
                             ui.add_space(2.0);
                         }
 
+                        // Enable text wrapping
+                        ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Wrap);
+
                         let visuals = &mut ui.style_mut().visuals;
                         visuals.override_text_color = Some(self.current_theme.assistant_message_text);
                         visuals.extreme_bg_color = self.current_theme.assistant_message_bg;
@@ -583,8 +597,7 @@ impl OverlookApp {
                         // Suppress egui grid ID warnings in debug mode
                         ui.ctx().options_mut(|o| o.warn_on_id_clash = false);
 
-                        egui_commonmark::CommonMarkViewer::new()
-                            .show(ui, &mut self.markdown_cache, &message.content);
+                        MarkdownRenderer::new().show(ui, &message.content);
                     },
                 );
             });
@@ -605,10 +618,13 @@ impl OverlookApp {
         ui.horizontal(|ui| {
             ui.add_space(20.0); // Left margin
 
+            let max_width = ui.available_width() * 0.9;
             ui.allocate_ui_with_layout(
-                [ui.available_width() * 0.9, 0.0].into(),
+                [max_width, 0.0].into(),
                 egui::Layout::top_down(egui::Align::LEFT),
                 |ui| {
+                    ui.set_max_width(max_width);
+
                     // Collapsible header with proper theme colors
                     let header_text = if is_expanded {
                         format!("🔍 Web Search Results ({} results) ▼ Hide", result_count)
@@ -637,6 +653,9 @@ impl OverlookApp {
                     if is_expanded {
                         ui.add_space(8.0);
 
+                        // Enable text wrapping
+                        ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Wrap);
+
                         let visuals = &mut ui.style_mut().visuals;
                         visuals.override_text_color = Some(self.current_theme.assistant_message_text);
                         visuals.extreme_bg_color = self.current_theme.assistant_message_bg;
@@ -644,8 +663,7 @@ impl OverlookApp {
                         // Suppress egui grid ID warnings
                         ui.ctx().options_mut(|o| o.warn_on_id_clash = false);
 
-                        egui_commonmark::CommonMarkViewer::new()
-                            .show(ui, &mut self.markdown_cache, &message.content);
+                        MarkdownRenderer::new().show(ui, &message.content);
                     }
                 },
             );
@@ -661,10 +679,13 @@ impl OverlookApp {
         ui.horizontal(|ui| {
             ui.add_space(20.0); // Left margin
 
+            let max_width = ui.available_width() * 0.8;
             ui.allocate_ui_with_layout(
-                [ui.available_width() * 0.8, 0.0].into(),
+                [max_width, 0.0].into(),
                 egui::Layout::top_down(egui::Align::LEFT),
                 |ui| {
+                    ui.set_max_width(max_width);
+
                     // Show model indicator badge for streaming message
                     if let (Some(provider), Some(model)) = (&self.last_request_provider, &self.last_request_model) {
                         ui.label(
@@ -676,6 +697,9 @@ impl OverlookApp {
                         ui.add_space(2.0);
                     }
 
+                    // Enable text wrapping
+                    ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Wrap);
+
                     ui.style_mut().visuals.override_text_color = Some(self.current_theme.assistant_message_text);
                     ui.visuals_mut().extreme_bg_color = self.current_theme.assistant_message_bg;
 
@@ -683,8 +707,7 @@ impl OverlookApp {
                     ui.ctx().options_mut(|o| o.warn_on_id_clash = false);
 
                     // Render markdown content
-                    egui_commonmark::CommonMarkViewer::new()
-                        .show(ui, &mut self.markdown_cache, &self.streaming_message);
+                    MarkdownRenderer::new().show(ui, &self.streaming_message);
 
                     // Add a blinking cursor effect only while actively streaming
                     if !self.stream_completed {

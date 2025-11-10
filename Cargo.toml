@@ -12,9 +12,11 @@ name = "test_pdf"
 path = "src/bin/test_pdf.rs"
 
 [dependencies]
-eframe = "0.32"
-egui = "0.32"
-egui_commonmark = "0.21"
+eframe = "0.31"
+egui = "0.31"
+egui_extras = { version = "0.31", features = ["all_loaders"] }
+egui-twemoji = "0.7"
+pulldown-cmark = "0.12"
 tokio = { version = "1.0", features = ["full"] }
 poll-promise = "0.3"
 reqwest = { version = "0.11", features = ["json", "stream"] }
@@ -39,3 +41,4 @@ ring = "0.17"
 zeroize = "1.7"
 tiktoken-rs = "0.5"
 dotenvy = "0.15"
+open = "5.0"

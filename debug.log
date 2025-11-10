@@ -1,0 +1,99 @@
+Loading models for OpenRouter with key prefix: sk-or-v1
+Successfully loaded 342 models for OpenRouter
+DEBUG flush_text: 'For a beginning Rust book, what would you recommend for a list of chapters?' has_emoji=false in_strong=false in_emphasis=false
+DEBUG flush_text: 'Below is a sample table‑of‑contents that works well for a first‑time Rust reader.' has_emoji=false in_strong=false in_emphasis=false
+DEBUG flush_text: 'It follows the way most people actually learn the language: start with the “Hello, world!” of a tiny program, then immediately dive into the core concepts that make Rust unique (ownership, borrowing, lifetimes), and only later explore the richer ecosystem (Cargo, testing, async, etc.).' has_emoji=false in_strong=false in_emphasis=false
+DEBUG flush_text: 'Feel free to reorder or split chapters to match the length of your book, the depth you want to go into, or the background of your audience (e.g., programmers vs. complete novices).' has_emoji=false in_strong=false in_emphasis=false
+DEBUG flush_text: 'Part I – Getting Started' has_emoji=false in_strong=false in_emphasis=false
+DEBUG flush_text: 'Part II – The Core of Rust' has_emoji=false in_strong=false in_emphasis=false
+DEBUG flush_text: 'Part III – Building Real‑World Programs' has_emoji=false in_strong=false in_emphasis=false
+DEBUG flush_text: 'Part IV – Going Further (Optional Appendices)' has_emoji=false in_strong=false in_emphasis=false
+DEBUG flush_text: 'How to Use This Outline' has_emoji=false in_strong=false in_emphasis=false
+DEBUG flush_text: 'Quick “One‑Page” Chapter Summary (for a 12‑chapter book)' has_emoji=false in_strong=false in_emphasis=false
+DEBUG flush_text: 'Hello, Rust! – Install, ' has_emoji=false in_strong=false in_emphasis=false
+DEBUG flush_text: ', ' has_emoji=false in_strong=false in_emphasis=false
+DEBUG flush_text: '.Variables & Types – ' has_emoji=false in_strong=false in_emphasis=false
+DEBUG flush_text: ', ' has_emoji=false in_strong=false in_emphasis=false
+DEBUG flush_text: ', scalar types, ' has_emoji=false in_strong=false in_emphasis=false
+DEBUG flush_text: '.Control Flow – ' has_emoji=false in_strong=false in_emphasis=false
+DEBUG flush_text: ', ' has_emoji=false in_strong=false in_emphasis=false
+DEBUG flush_text: ', loops.Ownership & Moves – The ownership rule, ' has_emoji=false in_strong=false in_emphasis=false
+DEBUG flush_text: '.Borrowing & References – Immutable/mutable refs, the borrow checker.Lifetimes – Elision, explicit lifetimes in functions.Compound Data – Tuples, arrays, slices, ' has_emoji=false in_strong=false in_emphasis=false
+DEBUG flush_text: '.Structs & Enums – Definition, impl, pattern matching.Error Handling – ' has_emoji=false in_strong=false in_emphasis=false
+DEBUG flush_text: ', ' has_emoji=false in_strong=false in_emphasis=false
+DEBUG flush_text: ', custom errors.Modules & Crates – ' has_emoji=false in_strong=false in_emphasis=false
+DEBUG flush_text: ', ' has_emoji=false in_strong=false in_emphasis=false
+DEBUG flush_text: ', external crates.Testing & Docs – ' has_emoji=false in_strong=false in_emphasis=false
+DEBUG flush_text: ', ' has_emoji=false in_strong=false in_emphasis=false
+DEBUG flush_text: ', doc comments.Iterators & Concurrency – Iterator adapters, threads, ' has_emoji=false in_strong=false in_emphasis=false
+DEBUG flush_text: '.' has_emoji=false in_strong=false in_emphasis=false
+DEBUG flush_text: 'If you need more depth, expand chapters 12‑20 as shown in the full outline above.' has_emoji=false in_strong=false in_emphasis=false
+DEBUG flush_text: 'Final Thought' has_emoji=false in_strong=false in_emphasis=false
+DEBUG flush_text: 'A beginner Rust book should always:' has_emoji=false in_strong=false in_emphasis=false
+DEBUG flush_text: 'Show the why before the how (ownership is introduced by a concrete bug).Keep the feedback loop short – compile‑run‑inspect every few lines.Leverage Cargo as the teaching vehicle; the reader should feel that “Rust development = Cargo”.' has_emoji=false in_strong=false in_emphasis=false
+DEBUG flush_text: 'Follow the chapter list (or a trimmed version of it) and you’ll have a solid, pedagogically‑sound roadmap for anyone taking their first steps in Rust. Happy writing!' has_emoji=false in_strong=false in_emphasis=false
+DEBUG flush_text: 'For a beginning Rust book, what would you recommend for a list of chapters?' has_emoji=false in_strong=false in_emphasis=false
+DEBUG flush_text: 'Below is a sample table‑of‑contents that works well for a first‑time Rust reader.' has_emoji=false in_strong=false in_emphasis=false
+DEBUG flush_text: 'It follows the way most people actually learn the language: start with the “Hello, world!” of a tiny program, then immediately dive into the core concepts that make Rust unique (ownership, borrowing, lifetimes), and only later explore the richer ecosystem (Cargo, testing, async, etc.).' has_emoji=false in_strong=false in_emphasis=false
+DEBUG flush_text: 'Feel free to reorder or split chapters to match the length of your book, the depth you want to go into, or the background of your audience (e.g., programmers vs. complete novices).' has_emoji=false in_strong=false in_emphasis=false
+DEBUG flush_text: 'Part I – Getting Started' has_emoji=false in_strong=false in_emphasis=false
+DEBUG flush_text: 'Part II – The Core of Rust' has_emoji=false in_strong=false in_emphasis=false
+DEBUG flush_text: 'Part III – Building Real‑World Programs' has_emoji=false in_strong=false in_emphasis=false
+DEBUG flush_text: 'Part IV – Going Further (Optional Appendices)' has_emoji=false in_strong=false in_emphasis=false
+DEBUG flush_text: 'How to Use This Outline' has_emoji=false in_strong=false in_emphasis=false
+DEBUG flush_text: 'Quick “One‑Page” Chapter Summary (for a 12‑chapter book)' has_emoji=false in_strong=false in_emphasis=false
+DEBUG flush_text: 'Hello, Rust! – Install, ' has_emoji=false in_strong=false in_emphasis=false
+DEBUG flush_text: ', ' has_emoji=false in_strong=false in_emphasis=false
+DEBUG flush_text: '.Variables & Types – ' has_emoji=false in_strong=false in_emphasis=false
+DEBUG flush_text: ', ' has_emoji=false in_strong=false in_emphasis=false
+DEBUG flush_text: ', scalar types, ' has_emoji=false in_strong=false in_emphasis=false
+DEBUG flush_text: '.Control Flow – ' has_emoji=false in_strong=false in_emphasis=false
+DEBUG flush_text: ', ' has_emoji=false in_strong=false in_emphasis=false
+DEBUG flush_text: ', loops.Ownership & Moves – The ownership rule, ' has_emoji=false in_strong=false in_emphasis=false
+DEBUG flush_text: '.Borrowing & References – Immutable/mutable refs, the borrow checker.Lifetimes – Elision, explicit lifetimes in functions.Compound Data – Tuples, arrays, slices, ' has_emoji=false in_strong=false in_emphasis=false
+DEBUG flush_text: '.Structs & Enums – Definition, impl, pattern matching.Error Handling – ' has_emoji=false in_strong=false in_emphasis=false
+DEBUG flush_text: ', ' has_emoji=false in_strong=false in_emphasis=false
+DEBUG flush_text: ', custom errors.Modules & Crates – ' has_emoji=false in_strong=false in_emphasis=false
+DEBUG flush_text: ', ' has_emoji=false in_strong=false in_emphasis=false
+DEBUG flush_text: ', external crates.Testing & Docs – ' has_emoji=false in_strong=false in_emphasis=false
+DEBUG flush_text: ', ' has_emoji=false in_strong=false in_emphasis=false
+DEBUG flush_text: ', doc comments.Iterators & Concurrency – Iterator adapters, threads, ' has_emoji=false in_strong=false in_emphasis=false
+DEBUG flush_text: '.' has_emoji=false in_strong=false in_emphasis=false
+DEBUG flush_text: 'If you need more depth, expand chapters 12‑20 as shown in the full outline above.' has_emoji=false in_strong=false in_emphasis=false
+DEBUG flush_text: 'Final Thought' has_emoji=false in_strong=false in_emphasis=false
+DEBUG flush_text: 'A beginner Rust book should always:' has_emoji=false in_strong=false in_emphasis=false
+DEBUG flush_text: 'Show the why before the how (ownership is introduced by a concrete bug).Keep the feedback loop short – compile‑run‑inspect every few lines.Leverage Cargo as the teaching vehicle; the reader should feel that “Rust development = Cargo”.' has_emoji=false in_strong=false in_emphasis=false
+DEBUG flush_text: 'Follow the chapter list (or a trimmed version of it) and you’ll have a solid, pedagogically‑sound roadmap for anyone taking their first steps in Rust. Happy writing!' has_emoji=false in_strong=false in_emphasis=false
+DEBUG flush_text: 'For a beginning Rust book, what would you recommend for a list of chapters?' has_emoji=false in_strong=false in_emphasis=false
+DEBUG flush_text: 'Below is a sample table‑of‑contents that works well for a first‑time Rust reader.' has_emoji=false in_strong=false in_emphasis=false
+DEBUG flush_text: 'It follows the way most people actually learn the language: start with the “Hello, world!” of a tiny program, then immediately dive into the core concepts that make Rust unique (ownership, borrowing, lifetimes), and only later explore the richer ecosystem (Cargo, testing, async, etc.).' has_emoji=false in_strong=false in_emphasis=false
+DEBUG flush_text: 'Feel free to reorder or split chapters to match the length of your book, the depth you want to go into, or the background of your audience (e.g., programmers vs. complete novices).' has_emoji=false in_strong=false in_emphasis=false
+DEBUG flush_text: 'Part I – Getting Started' has_emoji=false in_strong=false in_emphasis=false
+DEBUG flush_text: 'Part II – The Core of Rust' has_emoji=false in_strong=false in_emphasis=false
+DEBUG flush_text: 'Part III – Building Real‑World Programs' has_emoji=false in_strong=false in_emphasis=false
+DEBUG flush_text: 'Part IV – Going Further (Optional Appendices)' has_emoji=false in_strong=false in_emphasis=false
+DEBUG flush_text: 'How to Use This Outline' has_emoji=false in_strong=false in_emphasis=false
+DEBUG flush_text: 'Quick “One‑Page” Chapter Summary (for a 12‑chapter book)' has_emoji=false in_strong=false in_emphasis=false
+DEBUG flush_text: 'Hello, Rust! – Install, ' has_emoji=false in_strong=false in_emphasis=false
+DEBUG flush_text: ', ' has_emoji=false in_strong=false in_emphasis=false
+DEBUG flush_text: '.Variables & Types – ' has_emoji=false in_strong=false in_emphasis=false
+DEBUG flush_text: ', ' has_emoji=false in_strong=false in_emphasis=false
+DEBUG flush_text: ', scalar types, ' has_emoji=false in_strong=false in_emphasis=false
+DEBUG flush_text: '.Control Flow – ' has_emoji=false in_strong=false in_emphasis=false
+DEBUG flush_text: ', ' has_emoji=false in_strong=false in_emphasis=false
+DEBUG flush_text: ', loops.Ownership & Moves – The ownership rule, ' has_emoji=false in_strong=false in_emphasis=false
+DEBUG flush_text: '.Borrowing & References – Immutable/mutable refs, the borrow checker.Lifetimes – Elision, explicit lifetimes in functions.Compound Data – Tuples, arrays, slices, ' has_emoji=false in_strong=false in_emphasis=false
+DEBUG flush_text: '.Structs & Enums – Definition, impl, pattern matching.Error Handling – ' has_emoji=false in_strong=false in_emphasis=false
+DEBUG flush_text: ', ' has_emoji=false in_strong=false in_emphasis=false
+DEBUG flush_text: ', custom errors.Modules & Crates – ' has_emoji=false in_strong=false in_emphasis=false
+DEBUG flush_text: ', ' has_emoji=false in_strong=false in_emphasis=false
+DEBUG flush_text: ', external crates.Testing & Docs – ' has_emoji=false in_strong=false in_emphasis=false
+DEBUG flush_text: ', ' has_emoji=false in_strong=false in_emphasis=false
+DEBUG flush_text: ', doc comments.Iterators & Concurrency – Iterator adapters, threads, ' has_emoji=false in_strong=false in_emphasis=false
+DEBUG flush_text: '.' has_emoji=false in_strong=false in_emphasis=false
+DEBUG flush_text: 'If you need more depth, expand chapters 12‑20 as shown in the full outline above.' has_emoji=false in_strong=false in_emphasis=false
+DEBUG flush_text: 'Final Thought' has_emoji=false in_strong=false in_emphasis=false
+DEBUG flush_text: 'A beginner Rust book should always:' has_emoji=false in_strong=false in_emphasis=false
+DEBUG flush_text: 'Show the why before the how (ownership is introduced by a concrete bug).Keep the feedback loop short – compile‑run‑inspect every few lines.Leverage Cargo as the teaching vehicle; the reader should feel that “Rust development = Cargo”.' has_emoji=false in_strong=false in_emphasis=false
+DEBUG flush_text: 'Follow the chapter list (or a trimmed version of it) and you’ll have a solid, pedagogically‑sound roadmap for anyone taking their first steps in Rust. Happy writing!' has_emoji=false in_strong=false in_emphasis=false
+DEBUG flush_text: 'For a beginning Rust book, what would you recommend for a list of chapters?' has_emoji=false in_strong=false in_emphasis=false

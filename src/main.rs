@@ -2,6 +2,7 @@ mod api;
 mod app;
 mod attachments;
 mod export;
+mod markdown_renderer;
 mod storage;
 mod theme;
 mod tokens;
@@ -36,6 +37,9 @@ fn main() -> Result<(), eframe::Error> {
             cc.egui_ctx.style_mut(|style| {
                 theme.apply_to_egui_style(style, font_size);
             });
+
+            // Install image loaders for egui-twemoji SVG rendering
+            egui_extras::install_image_loaders(&cc.egui_ctx);
 
             Ok(Box::new(OverlookApp::new(cc)))
         }),

@@ -156,7 +156,7 @@ impl Theme {
         let visuals = &mut style.visuals;
 
         // Basic colors - Set ALL text color fields for proper contrast
-        visuals.weak_text_color = Some(self.text_secondary);  // Secondary/muted text
+        // Note: weak_text_color is a computed method in egui 0.31, not a settable field
         visuals.panel_fill = self.surface;
         visuals.window_fill = self.surface;
         visuals.faint_bg_color = self.sidebar_background;
