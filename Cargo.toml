@@ -12,10 +12,8 @@ name = "test_pdf"
 path = "src/bin/test_pdf.rs"
 
 [dependencies]
-eframe = "0.31"
-egui = "0.31"
-egui_extras = { version = "0.31", features = ["all_loaders"] }
-egui-twemoji = "0.7"
+gpui = { version = "0.2.2", features = ["runtime_shaders"] }
+gpui-component = "0.4.0-preview3"
 pulldown-cmark = "0.12"
 tokio = { version = "1.0", features = ["full"] }
 poll-promise = "0.3"

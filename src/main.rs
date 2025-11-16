@@ -1,47 +1,58 @@
-mod api;
-mod app;
-mod attachments;
-mod export;
-mod markdown_renderer;
-mod storage;
-mod theme;
-mod tokens;
-mod tools;
-mod types;
-mod ui;
+// GPUI Migration - Phase 0: Basic Hello World
+// Original egui code preserved in git history (main branch)
 
-use app::OverlookApp;
-use eframe::egui;
+use gpui::*;
+use gpui_component::*;
 
-fn main() -> Result<(), eframe::Error> {
+// Temporary minimal app struct for testing GPUI setup
+pub struct OverlookApp;
+
+impl Render for OverlookApp {
+    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+        div()
+            .flex()
+            .items_center()
+            .justify_center()
+            .size_full()
+            .bg(rgb(0x1e1e1e))
+            .text_color(rgb(0xffffff))
+            .text_size(px(24.0))
+            .child("GPUI Migration - Hello World ✓")
+    }
+}
+
+fn main() {
     // Load environment variables from .env file
     dotenvy::dotenv().ok();
 
-    let options = eframe::NativeOptions {
-        viewport: egui::ViewportBuilder::default()
-            .with_inner_size([1000.0, 700.0])
-            .with_min_inner_size([800.0, 600.0])
-            .with_resizable(true),
-        ..Default::default()
-    };
+    let app = Application::new();
 
-    eframe::run_native(
-        "Overlook - OpenRouter Chat",
-        options,
-        Box::new(|cc| {
-            // Load and apply theme BEFORE creating the app
-            let theme_type = storage::Storage::load_theme().unwrap_or_default();
-            let theme = theme::Theme::from_theme_type(&theme_type);
-            let font_size = storage::Storage::load_font_size().unwrap_or(14.0);
+    app.run(move |cx| {
+        // Initialize gpui-component first
+        gpui_component::init(cx);
 
-            cc.egui_ctx.style_mut(|style| {
-                theme.apply_to_egui_style(style, font_size);
-            });
+        cx.spawn(async move |cx| {
+            cx.open_window(
+                WindowOptions {
+                    window_bounds: Some(WindowBounds::Windowed(Bounds {
+                        origin: point(px(100.0), px(100.0)),
+                        size: size(px(1000.0), px(700.0)),
+                    })),
+                    titlebar: Some(TitlebarOptions {
+                        title: Some("Overlook - GPUI Migration".into()),
+                        appears_transparent: false,
+                        ..Default::default()
+                    }),
+                    ..Default::default()
+                },
+                |window, cx| {
+                    let view = cx.new(|_| OverlookApp);
+                    cx.new(|cx| Root::new(view, window, cx))
+                },
+            )?;
 
-            // Install image loaders for egui-twemoji SVG rendering
-            egui_extras::install_image_loaders(&cc.egui_ctx);
-
-            Ok(Box::new(OverlookApp::new(cc)))
-        }),
-    )
+            Ok::<_, anyhow::Error>(())
+        })
+        .detach();
+    });
 }

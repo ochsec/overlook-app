@@ -38,6 +38,7 @@ struct EventRenderer<'a> {
     code_block_language: Option<String>,
     in_list: bool,
     list_item_number: Option<usize>,
+    list_item_start: bool, // Track if we're at the start of a list item
     in_blockquote: bool,
     blockquote_text: Vec<String>,
     link_url: Option<String>,
@@ -69,6 +70,7 @@ impl<'a> EventRenderer<'a> {
             code_block_language: None,
             in_list: false,
             list_item_number: None,
+            list_item_start: false,
             in_blockquote: false,
             blockquote_text: Vec::new(),
             link_url: None,
@@ -152,7 +154,7 @@ impl<'a> EventRenderer<'a> {
                 self.list_item_number = start.map(|n| n as usize);
             }
             Tag::Item => {
-                // Handled in text rendering
+                self.list_item_start = true; // Mark that we're starting a new list item
             }
             Tag::BlockQuote(..) => {
                 self.flush_text();
@@ -283,32 +285,38 @@ impl<'a> EventRenderer<'a> {
         let segments = split_emoji_segments(text);
 
         if self.in_list {
-            self.ui.horizontal(|ui| {
+            // Render list bullet only at the start of the item
+            if self.list_item_start {
                 if let Some(num) = self.list_item_number {
-                    ui.label(format!("{}.", num));
+                    self.ui.label(format!("{}. ", num));
                 } else {
-                    ui.label("•");
+                    self.ui.label("• ");
                 }
-                for (segment, is_emoji) in segments {
-                    if is_emoji {
-                        EmojiLabel::new(segment).show(ui);
-                    } else {
-                        let mut rich_text = RichText::new(segment);
-                        if self.in_strong {
-                            rich_text = rich_text.strong();
-                        }
-                        if self.in_emphasis {
-                            rich_text = rich_text.italics();
-                        }
-                        if self.in_strikethrough {
-                            rich_text = rich_text.strikethrough();
-                        }
-                        ui.label(rich_text);
+                self.list_item_start = false; // Only render bullet once per item
+            }
+
+            // Render text segments inline
+            for (segment, is_emoji) in segments {
+                if is_emoji {
+                    EmojiLabel::new(segment).show(self.ui);
+                } else {
+                    let mut rich_text = RichText::new(segment);
+                    if self.in_strong {
+                        rich_text = rich_text.strong();
                     }
+                    if self.in_emphasis {
+                        rich_text = rich_text.italics();
+                    }
+                    if self.in_strikethrough {
+                        rich_text = rich_text.strikethrough();
+                    }
+                    self.ui.label(rich_text);
                 }
-            });
+            }
         } else {
-            self.ui.horizontal(|ui| {
+            // Use horizontal_wrapped to allow inline flow without forced line breaks
+            self.ui.horizontal_wrapped(|ui| {
+                ui.spacing_mut().item_spacing.x = 0.0; // No spacing between segments
                 for (segment, is_emoji) in segments {
                     if is_emoji {
                         EmojiLabel::new(segment).show(ui);
@@ -380,14 +388,16 @@ impl<'a> EventRenderer<'a> {
 
         // Handle list items
         if self.in_list {
-            self.ui.horizontal(|ui| {
+            // Render list bullet only at the start of the item
+            if self.list_item_start {
                 if let Some(num) = self.list_item_number {
-                    ui.label(format!("{}.", num));
+                    self.ui.label(format!("{}. ", num));
                 } else {
-                    ui.label("•");
+                    self.ui.label("• ");
                 }
-                ui.label(rich_text);
-            });
+                self.list_item_start = false; // Only render bullet once per item
+            }
+            self.ui.label(rich_text);
         } else {
             self.ui.label(rich_text);
         }
@@ -399,6 +409,16 @@ impl<'a> EventRenderer<'a> {
     }
 
     fn render_inline_code(&mut self, code: &str) {
+        // Render list bullet if this is the start of a list item
+        if self.in_list && self.list_item_start {
+            if let Some(num) = self.list_item_number {
+                self.ui.label(format!("{}. ", num));
+            } else {
+                self.ui.label("• ");
+            }
+            self.list_item_start = false;
+        }
+
         let code_text = RichText::new(code)
             .font(FontId::monospace(12.0))
             .background_color(Color32::from_rgb(40, 40, 40))
@@ -408,8 +428,24 @@ impl<'a> EventRenderer<'a> {
     }
 
     fn render_link(&mut self, text: &str, url: &str) {
-        if self.ui.hyperlink_to(text, url).on_hover_text(url).clicked() {
-            // URL opening is handled by egui's hyperlink_to
+        // Render link with emoji support
+        let has_emoji = text.chars().any(|c| is_emoji_char(c));
+
+        if has_emoji {
+            self.ui.horizontal_wrapped(|ui| {
+                ui.spacing_mut().item_spacing.x = 0.0;
+                for (segment, is_emoji) in split_emoji_segments(text) {
+                    if is_emoji {
+                        // Emoji in links - just show the emoji (clicking the emoji won't open link)
+                        EmojiLabel::new(&segment).show(ui);
+                    } else {
+                        // Regular text as hyperlink
+                        ui.hyperlink_to(&segment, url).on_hover_text(url);
+                    }
+                }
+            });
+        } else {
+            self.ui.hyperlink_to(text, url).on_hover_text(url);
         }
     }
 
@@ -451,6 +487,9 @@ impl<'a> EventRenderer<'a> {
             return;
         }
 
+        let text = &self.current_text;
+        let has_emoji = text.chars().any(|c| is_emoji_char(c));
+
         egui::Frame::new()
             .fill(Color32::from_rgba_unmultiplied(100, 100, 100, 20))
             .inner_margin(8.0)
@@ -459,11 +498,28 @@ impl<'a> EventRenderer<'a> {
                 Color32::from_rgb(100, 100, 100),
             ))
             .show(self.ui, |ui| {
-                ui.label(
-                    RichText::new(&self.current_text)
-                        .italics()
-                        .color(Color32::from_rgb(180, 180, 180)),
-                );
+                if has_emoji {
+                    ui.horizontal_wrapped(|ui| {
+                        ui.spacing_mut().item_spacing.x = 0.0;
+                        for (segment, is_emoji) in split_emoji_segments(text) {
+                            if is_emoji {
+                                EmojiLabel::new(&segment).show(ui);
+                            } else {
+                                ui.label(
+                                    RichText::new(&segment)
+                                        .italics()
+                                        .color(Color32::from_rgb(180, 180, 180)),
+                                );
+                            }
+                        }
+                    });
+                } else {
+                    ui.label(
+                        RichText::new(text)
+                            .italics()
+                            .color(Color32::from_rgb(180, 180, 180)),
+                    );
+                }
             });
 
         self.ui.add_space(8.0);
@@ -505,7 +561,22 @@ impl<'a> EventRenderer<'a> {
             .header(20.0, |mut header| {
                 for header_text in &headers {
                     header.col(|ui| {
-                        ui.strong(header_text);
+                        // Render header with emoji support
+                        let has_emoji = header_text.chars().any(|c| is_emoji_char(c));
+                        if has_emoji {
+                            ui.horizontal_wrapped(|ui| {
+                                ui.spacing_mut().item_spacing.x = 0.0;
+                                for (segment, is_emoji) in split_emoji_segments(header_text) {
+                                    if is_emoji {
+                                        EmojiLabel::new(segment).show(ui);
+                                    } else {
+                                        ui.strong(&segment);
+                                    }
+                                }
+                            });
+                        } else {
+                            ui.strong(header_text);
+                        }
                     });
                 }
             })
@@ -515,15 +586,15 @@ impl<'a> EventRenderer<'a> {
                         for cell in row {
                             table_row.col(|ui| {
                                 // Render cell content with emoji support
-                                // Check for emoji without borrowing self
                                 let has_emoji = cell.chars().any(|c| is_emoji_char(c));
                                 if has_emoji {
-                                    ui.horizontal(|ui| {
+                                    ui.horizontal_wrapped(|ui| {
+                                        ui.spacing_mut().item_spacing.x = 0.0;
                                         for (segment, is_emoji) in split_emoji_segments(cell) {
                                             if is_emoji {
-                                                EmojiLabel::new(segment).show(ui);
+                                                EmojiLabel::new(&segment).show(ui);
                                             } else {
-                                                ui.label(segment);
+                                                ui.label(&segment);
                                             }
                                         }
                                     });
