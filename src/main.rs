@@ -1,25 +1,27 @@
-// GPUI Migration - Phase 0: Basic Hello World
+// GPUI Migration - Phase 1: Infrastructure & View Routing
 // Original egui code preserved in git history (main branch)
+
+mod api;
+mod attachments;
+mod export;
+// mod markdown_renderer;  // TODO: Port to GPUI in later phase
+mod storage;
+// mod theme;  // Old egui theme - backed up as reference
+mod gpui_theme;  // New GPUI theme
+mod tokens;
+mod tools;
+mod types;
+// mod ui;  // Old egui UI - backed up as ui.rs.egui_backup
+
+// New GPUI modules
+mod components;
+mod views;
+mod state;
+mod gpui_app;
 
 use gpui::*;
 use gpui_component::*;
-
-// Temporary minimal app struct for testing GPUI setup
-pub struct OverlookApp;
-
-impl Render for OverlookApp {
-    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
-        div()
-            .flex()
-            .items_center()
-            .justify_center()
-            .size_full()
-            .bg(rgb(0x1e1e1e))
-            .text_color(rgb(0xffffff))
-            .text_size(px(24.0))
-            .child("GPUI Migration - Hello World ✓")
-    }
-}
+use gpui_app::OverlookApp;
 
 fn main() {
     // Load environment variables from .env file
@@ -36,17 +38,17 @@ fn main() {
                 WindowOptions {
                     window_bounds: Some(WindowBounds::Windowed(Bounds {
                         origin: point(px(100.0), px(100.0)),
-                        size: size(px(1000.0), px(700.0)),
+                        size: size(px(1200.0), px(800.0)),
                     })),
                     titlebar: Some(TitlebarOptions {
-                        title: Some("Overlook - GPUI Migration".into()),
+                        title: Some("Overlook - OpenRouter Chat".into()),
                         appears_transparent: false,
                         ..Default::default()
                     }),
                     ..Default::default()
                 },
                 |window, cx| {
-                    let view = cx.new(|_| OverlookApp);
+                    let view = cx.new(|cx| OverlookApp::new(cx));
                     cx.new(|cx| Root::new(view, window, cx))
                 },
             )?;

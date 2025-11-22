@@ -9,7 +9,7 @@
 //! - Linux: `~/.config/overlook/`
 //! - Windows: `%APPDATA%\overlook\`
 
-use crate::theme::ThemeType;
+use crate::gpui_theme::ThemeType;
 use crate::types::{ChatMap, FolderMap, Project, ProjectMap, ProviderKeys};
 use anyhow::{Context, Result};
 // use anyhow::anyhow;
