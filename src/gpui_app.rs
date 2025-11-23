@@ -14,6 +14,8 @@ pub struct OverlookApp {
     sidebar: Entity<Sidebar>,
     chat_view: Option<Entity<ChatView>>,
     chat_view_initialized: bool,
+    settings_view: Option<Entity<SettingsView>>,
+    settings_view_initialized: bool,
     model_picker: Option<Entity<ModelPickerModal>>,
     model_picker_initialized: bool,
 }
@@ -28,6 +30,8 @@ impl OverlookApp {
             sidebar,
             chat_view: None,
             chat_view_initialized: false,
+            settings_view: None,
+            settings_view_initialized: false,
             model_picker: None,
             model_picker_initialized: false,
         }
@@ -38,6 +42,14 @@ impl OverlookApp {
             let state = self.state.clone();
             self.chat_view = Some(cx.new(|cx| ChatView::new(state, window, cx)));
             self.chat_view_initialized = true;
+        }
+    }
+
+    fn ensure_settings_view(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if !self.settings_view_initialized {
+            let state = self.state.clone();
+            self.settings_view = Some(cx.new(|cx| SettingsView::new(state, window, cx)));
+            self.settings_view_initialized = true;
         }
     }
 
@@ -144,6 +156,7 @@ impl OverlookApp {
         &self,
         current_view: ViewMode,
         chat_view: Option<Entity<ChatView>>,
+        settings_view: Option<Entity<SettingsView>>,
         cx: &mut Context<Self>,
     ) -> AnyElement {
         match current_view {
@@ -155,8 +168,11 @@ impl OverlookApp {
                 }
             }
             ViewMode::Settings => {
-                let view = cx.new(|_| SettingsView::new(self.state.clone()));
-                view.into_any_element()
+                if let Some(settings_view) = settings_view {
+                    settings_view.into_any_element()
+                } else {
+                    div().child("Settings view not initialized").into_any_element()
+                }
             }
             ViewMode::Export => {
                 let view = cx.new(|_| ExportView::new(self.state.clone()));
@@ -174,6 +190,7 @@ impl Render for OverlookApp {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         // Ensure views are initialized (need window)
         self.ensure_chat_view(window, cx);
+        self.ensure_settings_view(window, cx);
         self.ensure_model_picker(window, cx);
 
         // Now read state and extract needed values
@@ -186,6 +203,7 @@ impl Render for OverlookApp {
         // Clone entities for use in element tree
         let sidebar = self.sidebar.clone();
         let chat_view = self.chat_view.clone();
+        let settings_view = self.settings_view.clone();
         let model_picker = self.model_picker.clone();
 
         div()
@@ -212,7 +230,7 @@ impl Render for OverlookApp {
                         div()
                             .flex_1()
                             .overflow_hidden()
-                            .child(self.render_main_content_element(current_view, chat_view, cx))
+                            .child(self.render_main_content_element(current_view, chat_view, settings_view, cx))
                     )
             )
             // Model picker modal overlay
