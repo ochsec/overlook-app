@@ -137,6 +137,91 @@ impl AppState {
         self.current_project_id.as_ref()
             .and_then(|id| self.projects.get(id))
     }
+
+    /// Get models filtered by search query and grouped by category
+    pub fn get_filtered_grouped_models(&self) -> Vec<(String, Vec<ModelDescriptor>)> {
+        use std::collections::HashMap;
+
+        let query = self.model_search_query.to_lowercase();
+
+        // Filter models by search query
+        let filtered: Vec<ModelDescriptor> = self.available_models
+            .iter()
+            .filter(|model| {
+                if query.is_empty() {
+                    true
+                } else {
+                    model.name.to_lowercase().contains(&query) ||
+                    model.id.to_lowercase().contains(&query)
+                }
+            })
+            .cloned()
+            .collect();
+
+        // Group by category
+        let mut groups: HashMap<String, Vec<ModelDescriptor>> = HashMap::new();
+        for model in filtered {
+            let category = Self::get_model_category(&model);
+            groups.entry(category).or_default().push(model);
+        }
+
+        // Sort groups and models within groups
+        let mut result: Vec<(String, Vec<ModelDescriptor>)> = groups.into_iter().collect();
+        result.sort_by(|a, b| a.0.cmp(&b.0));
+
+        for (_, models) in &mut result {
+            models.sort_by(|a, b| a.name.cmp(&b.name));
+        }
+
+        result
+    }
+
+    /// Get category name for a model (for grouping)
+    fn get_model_category(model: &ModelDescriptor) -> String {
+        // For OpenRouter, extract vendor from model ID (format: vendor/model)
+        if model.provider == ProviderKind::OpenRouter {
+            if let Some(slash_pos) = model.id.find('/') {
+                let vendor = &model.id[..slash_pos];
+                // Capitalize and clean up vendor name
+                return vendor
+                    .split('-')
+                    .map(|word| {
+                        let mut chars = word.chars();
+                        match chars.next() {
+                            None => String::new(),
+                            Some(first) => first.to_uppercase().collect::<String>() + chars.as_str(),
+                        }
+                    })
+                    .collect::<Vec<_>>()
+                    .join(" ");
+            }
+        }
+
+        // For other providers, use simple categorization by model family
+        let lower = model.name.to_lowercase();
+
+        if lower.contains("gpt-4") || lower.contains("gpt4") {
+            "GPT-4".to_string()
+        } else if lower.contains("gpt-3.5") || lower.contains("gpt3") {
+            "GPT-3.5".to_string()
+        } else if lower.contains("gpt") {
+            "GPT".to_string()
+        } else if lower.contains("claude-3.5") || lower.contains("claude-3-5") {
+            "Claude 3.5".to_string()
+        } else if lower.contains("claude-3") || lower.contains("claude3") {
+            "Claude 3".to_string()
+        } else if lower.contains("claude") {
+            "Claude".to_string()
+        } else if lower.contains("llama") {
+            "Llama".to_string()
+        } else if lower.contains("gemini") {
+            "Gemini".to_string()
+        } else if lower.contains("mistral") || lower.contains("mixtral") {
+            "Mistral".to_string()
+        } else {
+            "Other".to_string()
+        }
+    }
 }
 
 impl Default for AppState {
