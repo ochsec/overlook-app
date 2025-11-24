@@ -7,16 +7,19 @@ use crate::types::Message;
 pub struct MessageBubble {
     message: Message,
     theme: GpuiTheme,
+    font_size: f32,
 }
 
 impl MessageBubble {
-    pub fn new(message: Message, theme: GpuiTheme) -> Self {
-        Self { message, theme }
+    pub fn new(message: Message, theme: GpuiTheme, font_size: f32) -> Self {
+        Self { message, theme, font_size }
     }
 
     pub fn render_element(self) -> impl IntoElement {
         let is_user = self.message.role == "user";
         let is_system = self.message.role == "system";
+
+        let font_size = self.font_size;
 
         if is_system {
             // System messages (like search results) - centered, muted
@@ -32,7 +35,7 @@ impl MessageBubble {
                         .bg(self.theme.assistant_message_bg)
                         .rounded_lg()
                         .text_color(self.theme.text_muted)
-                        .text_sm()
+                        .text_size(px(font_size - 2.0))
                         .italic()
                         .child(self.message.content.clone())
                 )
@@ -51,6 +54,7 @@ impl MessageBubble {
                         .bg(self.theme.user_message_bg)
                         .rounded_lg()
                         .text_color(self.theme.user_message_text)
+                        .text_size(px(font_size))
                         .child(self.message.content.clone())
                 )
         } else {
@@ -88,6 +92,7 @@ impl MessageBubble {
                         .bg(self.theme.assistant_message_bg)
                         .rounded_lg()
                         .text_color(self.theme.assistant_message_text)
+                        .text_size(px(font_size))
                         // TODO: Add markdown rendering
                         .child(self.message.content.clone())
                 )
@@ -96,7 +101,7 @@ impl MessageBubble {
 }
 
 // Helper to render a streaming message with cursor
-pub fn render_streaming_message(content: &str, theme: &GpuiTheme, show_cursor: bool) -> impl IntoElement {
+pub fn render_streaming_message(content: &str, theme: &GpuiTheme, font_size: f32, show_cursor: bool) -> impl IntoElement {
     div()
         .flex()
         .flex_col()
@@ -111,6 +116,7 @@ pub fn render_streaming_message(content: &str, theme: &GpuiTheme, show_cursor: b
                 .bg(theme.assistant_message_bg)
                 .rounded_lg()
                 .text_color(theme.assistant_message_text)
+                .text_size(px(font_size))
                 .child(
                     div()
                         .flex()

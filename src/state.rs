@@ -79,14 +79,14 @@ impl AppState {
             theme,
             font_size,
 
-            api_keys: ProviderKeys::default(),
+            api_keys: Storage::load_api_keys().unwrap_or_default(),
             current_provider: ProviderKind::default(),
             current_model: String::default(),
             available_models: Vec::new(),
             loading_models: false,
 
-            chats: ChatMap::default(),
-            projects: ProjectMap::default(),
+            chats: Storage::load_chats().unwrap_or_default(),
+            projects: Storage::load_projects().unwrap_or_default(),
             current_chat_id: None,
             current_project_id: None,
 

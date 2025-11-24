@@ -38,6 +38,14 @@ impl ModelPickerModal {
 
 impl Render for ModelPickerModal {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        // Read the search input value and sync it to the state
+        let search_query = self.search_input.read(cx).value().to_string();
+
+        // Update state's model_search_query to keep filtering in sync
+        self.state.update(cx, |state, _| {
+            state.model_search_query = search_query;
+        });
+
         let state = self.state.read(cx);
         let state_model = self.state.clone();
 

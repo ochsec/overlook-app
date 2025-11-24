@@ -3,7 +3,13 @@ use gpui::*;
 use gpui::prelude::*;
 use gpui_component::button::{Button, ButtonVariants};
 use gpui_component::input::{InputState, Input};
+use chrono::Utc;
+use std::time::Duration;
+use crate::api::{ApiClient, run_on_tokio_async, stream_chat_to_channel};
 use crate::state::AppState;
+use crate::storage::Storage;
+use crate::tools::SearchOrchestrator;
+use crate::types::{Chat, Message};
 
 pub struct ChatInput {
     state: Entity<AppState>,
@@ -130,15 +136,342 @@ impl Render for ChatInput {
                     .child({
                         // Send button
                         let state_model = state_model.clone();
+                        let input_entity = self.input.clone();
                         let mut btn = Button::new("send_btn")
                             .label(send_label)
                             .primary();
 
                         if !is_sending {
-                            btn = btn.on_click(move |_, _, app| {
-                                state_model.update(app, |_state, _| {
-                                    println!("Send clicked");
+                            btn = btn.on_click(move |_, window, app| {
+                                // Read message from input
+                                let message_text = input_entity.read(app).value().to_string();
+                                let message_text = message_text.trim().to_string();
+
+                                if message_text.is_empty() {
+                                    println!("Cannot send empty message");
+                                    return;
+                                }
+
+                                // Extract values needed for async task
+                                let (provider, model, api_key, chat_id, existing_messages) = {
+                                    let state = state_model.read(app);
+                                    if state.current_model.is_empty() {
+                                        println!("No model selected");
+                                        return;
+                                    }
+                                    let api_key = state.api_keys.get(state.current_provider).to_string();
+                                    let messages = state.current_chat_id.as_ref()
+                                        .and_then(|id| state.chats.get(id))
+                                        .map(|chat| chat.messages.clone())
+                                        .unwrap_or_default();
+                                    (
+                                        state.current_provider,
+                                        state.current_model.clone(),
+                                        api_key,
+                                        state.current_chat_id.clone(),
+                                        messages,
+                                    )
+                                };
+
+                                // Create user message
+                                let user_message = Message {
+                                    role: "user".to_string(),
+                                    content: message_text.clone(),
+                                    timestamp: Utc::now(),
+                                    attachments: Vec::new(),
+                                    provider: Some(provider),
+                                    model: Some(model.clone()),
+                                };
+
+                                // Create or update chat
+                                let chat_id = state_model.update(app, |state, _| {
+                                    let chat_id = match chat_id {
+                                        Some(id) => id,
+                                        None => {
+                                            // Create new chat
+                                            let now = Utc::now();
+                                            let new_chat = Chat {
+                                                id: uuid::Uuid::new_v4().to_string(),
+                                                title: message_text.chars().take(30).collect::<String>() + if message_text.len() > 30 { "..." } else { "" },
+                                                messages: Vec::new(),
+                                                model: model.clone(),
+                                                provider,
+                                                project_id: state.current_project_id.clone(),
+                                                created_at: now,
+                                                updated_at: now,
+                                            };
+                                            let id = new_chat.id.clone();
+                                            state.chats.insert(id.clone(), new_chat);
+                                            state.current_chat_id = Some(id.clone());
+                                            id
+                                        }
+                                    };
+
+                                    // Add user message to chat
+                                    if let Some(chat) = state.chats.get_mut(&chat_id) {
+                                        chat.messages.push(user_message.clone());
+                                        chat.updated_at = Utc::now();
+                                    }
+
+                                    // Save chats immediately after adding user message
+                                    if let Err(e) = Storage::save_chats(&state.chats) {
+                                        eprintln!("Failed to save chats: {}", e);
+                                    }
+
+                                    // Set sending state
+                                    state.sending_message = true;
+                                    chat_id
                                 });
+
+                                // Clear the input field
+                                input_entity.update(app, |input, cx| {
+                                    input.set_value("", window, cx);
+                                });
+
+                                // Build messages for API (include the new user message)
+                                let mut api_messages = existing_messages;
+                                api_messages.push(user_message);
+
+                                // Check if streaming is enabled
+                                let streaming_enabled = state_model.read(app).streaming_enabled;
+
+                                if streaming_enabled {
+                                    // Set streaming state
+                                    state_model.update(app, |state, _| {
+                                        state.streaming_active = true;
+                                        state.streaming_message.clear();
+                                        state.stream_completed = false;
+                                    });
+
+                                    // Spawn task to handle search + streaming
+                                    let state_model = state_model.clone();
+                                    let chat_id = chat_id.clone();
+                                    let model_for_result = model.clone();
+                                    let user_query = message_text.clone();
+                                    app.spawn({
+                                        let state_model = state_model.clone();
+                                        let api_key = api_key.clone();
+                                        let model = model.clone();
+                                        async move |cx| {
+                                            // Check if web search is configured and perform search if needed
+                                            let search_orchestrator = SearchOrchestrator::new();
+                                            let mut final_api_messages = api_messages.clone();
+
+                                            // Try to perform web search if configured
+                                            let search_result = run_on_tokio_async({
+                                                let user_query = user_query.clone();
+                                                let api_key = api_key.clone();
+                                                let model = model.clone();
+                                                async move {
+                                                    // Check if search is configured
+                                                    if std::env::var("SEARXNG_URL").is_err() {
+                                                        return None;
+                                                    }
+
+                                                    println!("Web search is configured, checking if search is needed...");
+
+                                                    // First, ask the LLM if it needs to search
+                                                    let decision_prompt = SearchOrchestrator::create_search_decision_message(&user_query);
+                                                    let decision_message = Message {
+                                                        role: "user".to_string(),
+                                                        content: decision_prompt,
+                                                        timestamp: Utc::now(),
+                                                        attachments: Vec::new(),
+                                                        provider: Some(provider),
+                                                        model: Some(model.clone()),
+                                                    };
+
+                                                    let api_client = ApiClient::new();
+                                                    match api_client.send_chat_message(
+                                                        provider,
+                                                        &api_key,
+                                                        &model,
+                                                        vec![decision_message],
+                                                    ).await {
+                                                        Ok(response) => {
+                                                            println!("Search decision response: {}", response);
+                                                            match SearchOrchestrator::parse_search_decision(&response) {
+                                                                Ok(decision) => {
+                                                                    if decision.search {
+                                                                        if let Some(query) = decision.query {
+                                                                            println!("Searching for: {}", query);
+                                                                            // Perform the search
+                                                                            match search_orchestrator.search_and_format(&query).await {
+                                                                                Ok(results) => {
+                                                                                    println!("Search completed successfully");
+                                                                                    return Some(results);
+                                                                                }
+                                                                                Err(e) => {
+                                                                                    eprintln!("Search failed: {}", e);
+                                                                                }
+                                                                            }
+                                                                        }
+                                                                    } else {
+                                                                        println!("LLM decided search not needed");
+                                                                    }
+                                                                }
+                                                                Err(e) => eprintln!("Failed to parse search decision: {}", e),
+                                                            }
+                                                        }
+                                                        Err(e) => eprintln!("Failed to get search decision: {}", e),
+                                                    }
+                                                    None
+                                                }
+                                            }).await;
+
+                                            // If we got search results, add them as a system message
+                                            if let Some(search_context) = search_result {
+                                                let search_message = Message {
+                                                    role: "system".to_string(),
+                                                    content: search_context,
+                                                    timestamp: Utc::now(),
+                                                    attachments: Vec::new(),
+                                                    provider: Some(provider),
+                                                    model: Some(model.clone()),
+                                                };
+                                                // Insert at the beginning
+                                                final_api_messages.insert(0, search_message);
+                                            }
+
+                                            // Now start streaming with the (possibly augmented) messages
+                                            let (tx, rx) = std::sync::mpsc::channel();
+
+                                            // Start streaming in background thread
+                                            stream_chat_to_channel(
+                                                provider,
+                                                api_key.clone(),
+                                                model.clone(),
+                                                final_api_messages,
+                                                tx,
+                                            );
+
+                                            let mut full_response = String::new();
+                                            let mut had_error = false;
+
+                                            // Poll the channel for chunks
+                                            loop {
+                                                match rx.try_recv() {
+                                                    Ok(Ok(chunk)) => {
+                                                        full_response.push_str(&chunk);
+                                                        let response_so_far = full_response.clone();
+                                                        cx.update(|cx| {
+                                                            state_model.update(cx, |state, _| {
+                                                                state.streaming_message = response_so_far;
+                                                            });
+                                                        }).ok();
+                                                    }
+                                                    Ok(Err(e)) => {
+                                                        eprintln!("Streaming error: {}", e);
+                                                        had_error = true;
+                                                        break;
+                                                    }
+                                                    Err(std::sync::mpsc::TryRecvError::Empty) => {
+                                                        // Wait a bit and check again
+                                                        smol::Timer::after(Duration::from_millis(10)).await;
+                                                    }
+                                                    Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                                                        // Stream finished
+                                                        break;
+                                                    }
+                                                }
+                                            }
+
+                                            // Finalize streaming
+                                            let final_response = full_response;
+                                            cx.update(|cx| {
+                                                state_model.update(cx, |state, _| {
+                                                    state.sending_message = false;
+                                                    state.streaming_active = false;
+                                                    state.stream_completed = true;
+
+                                                    if !had_error && !final_response.is_empty() {
+                                                        // Create assistant message from streamed content
+                                                        let assistant_message = Message {
+                                                            role: "assistant".to_string(),
+                                                            content: final_response,
+                                                            timestamp: Utc::now(),
+                                                            attachments: Vec::new(),
+                                                            provider: Some(provider),
+                                                            model: Some(model_for_result.clone()),
+                                                        };
+
+                                                        // Add to chat
+                                                        if let Some(chat) = state.chats.get_mut(&chat_id) {
+                                                            chat.messages.push(assistant_message);
+                                                            chat.updated_at = Utc::now();
+                                                        }
+
+                                                        // Clear streaming message
+                                                        state.streaming_message.clear();
+
+                                                        // Save chats to disk
+                                                        if let Err(e) = Storage::save_chats(&state.chats) {
+                                                            eprintln!("Failed to save chats: {}", e);
+                                                        }
+
+                                                        println!("Streaming completed successfully");
+                                                    }
+                                                });
+                                            }).ok();
+                                        }
+                                    }).detach();
+                                } else {
+                                    // Use non-streaming API (fallback)
+                                    let state_model = state_model.clone();
+                                    app.spawn({
+                                        let state_model = state_model.clone();
+                                        let chat_id = chat_id.clone();
+                                        let model_for_result = model.clone();
+                                        async move |cx| {
+                                            // Run reqwest on Tokio runtime (GPUI uses smol)
+                                            let result = run_on_tokio_async(async move {
+                                                let api_client = ApiClient::new();
+                                                api_client.send_chat_message(
+                                                    provider,
+                                                    &api_key,
+                                                    &model,
+                                                    api_messages,
+                                                ).await
+                                            }).await;
+
+                                            cx.update(|cx| {
+                                                state_model.update(cx, |state, _| {
+                                                    state.sending_message = false;
+
+                                                    match result {
+                                                        Ok(response_text) => {
+                                                            // Create assistant message
+                                                            let assistant_message = Message {
+                                                                role: "assistant".to_string(),
+                                                                content: response_text,
+                                                                timestamp: Utc::now(),
+                                                                attachments: Vec::new(),
+                                                                provider: Some(provider),
+                                                                model: Some(model_for_result.clone()),
+                                                            };
+
+                                                            // Add to chat
+                                                            if let Some(chat) = state.chats.get_mut(&chat_id) {
+                                                                chat.messages.push(assistant_message);
+                                                                chat.updated_at = Utc::now();
+                                                            }
+
+                                                            // Save chats to disk
+                                                            if let Err(e) = Storage::save_chats(&state.chats) {
+                                                                eprintln!("Failed to save chats: {}", e);
+                                                            }
+
+                                                            println!("Message sent successfully");
+                                                        }
+                                                        Err(e) => {
+                                                            eprintln!("Failed to send message: {}", e);
+                                                        }
+                                                    }
+                                                });
+                                            }).ok();
+                                        }
+                                    }).detach();
+                                }
                             });
                         }
                         btn

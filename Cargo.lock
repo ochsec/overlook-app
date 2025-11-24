@@ -4363,6 +4363,7 @@ dependencies = [
  "ring",
  "serde",
  "serde_json",
+ "smol",
  "tiktoken-rs",
  "tokio",
  "tokio-retry",

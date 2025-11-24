@@ -55,6 +55,7 @@ impl ChatView {
                         // Render chat messages
                         let messages: Vec<_> = chat.messages.iter().cloned().collect();
                         let theme = state.theme.clone();
+                        let font_size = state.font_size;
                         let streaming_active = state.streaming_active;
                         let streaming_message = state.streaming_message.clone();
                         let stream_completed = state.stream_completed;
@@ -66,13 +67,13 @@ impl ChatView {
                             .scrollable(ScrollbarAxis::Vertical)
                             .children(
                                 messages.into_iter().map(|msg| {
-                                    MessageBubble::new(msg, theme.clone()).render_element().into_any_element()
+                                    MessageBubble::new(msg, theme.clone(), font_size).render_element().into_any_element()
                                 }).collect::<Vec<_>>()
                             )
                             // Streaming message
                             .when(streaming_active && !streaming_message.is_empty(), |this| {
                                 this.child(
-                                    render_streaming_message(&streaming_message, &theme, !stream_completed)
+                                    render_streaming_message(&streaming_message, &theme, font_size, !stream_completed)
                                 )
                             })
                             // Status indicators
@@ -111,6 +112,7 @@ impl ChatView {
     }
 
     fn render_welcome_message(&self, state: &AppState) -> impl IntoElement {
+        let font_size = state.font_size;
         div()
             .flex()
             .flex_col()
@@ -120,13 +122,14 @@ impl ChatView {
             .gap_4()
             .child(
                 div()
-                    .text_2xl()
+                    .text_size(px(font_size + 10.0))
                     .font_weight(FontWeight::BOLD)
                     .text_color(state.theme.text_primary)
                     .child("Welcome to Overlook Chat")
             )
             .child(
                 div()
+                    .text_size(px(font_size))
                     .text_color(state.theme.text_secondary)
                     .child("Select a model and start chatting, or create a new conversation.")
             )

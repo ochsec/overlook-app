@@ -4,9 +4,77 @@ use eventsource_stream::Eventsource;
 use futures_util::{stream::BoxStream, StreamExt};
 use serde::Deserialize;
 use serde_json::{json, Value};
+use std::sync::OnceLock;
 use std::time::Duration;
+use tokio::runtime::Runtime;
 use tokio_retry::strategy::{jitter, ExponentialBackoff};
 use tokio_retry::Retry;
+
+// Global Tokio runtime for API calls (GPUI uses smol, but reqwest needs Tokio)
+static TOKIO_RUNTIME: OnceLock<Runtime> = OnceLock::new();
+
+fn get_tokio_runtime() -> &'static Runtime {
+    TOKIO_RUNTIME.get_or_init(|| {
+        Runtime::new().expect("Failed to create Tokio runtime")
+    })
+}
+
+/// Run an async function on the Tokio runtime (for use from GPUI's smol context)
+/// DEPRECATED: Use run_on_tokio_async instead to avoid blocking the main thread
+pub fn run_on_tokio<F, T>(future: F) -> T
+where
+    F: std::future::Future<Output = T> + Send,
+    T: Send,
+{
+    get_tokio_runtime().block_on(future)
+}
+
+/// Run an async function on the Tokio runtime without blocking the calling thread.
+/// This uses smol::unblock to run the blocking Tokio work on a thread pool.
+pub async fn run_on_tokio_async<F, T>(future: F) -> T
+where
+    F: std::future::Future<Output = T> + Send + 'static,
+    T: Send + 'static,
+{
+    smol::unblock(move || get_tokio_runtime().block_on(future)).await
+}
+
+/// Stream chat completion chunks through a channel.
+/// Runs on a separate thread using Tokio runtime.
+/// Returns immediately, streaming happens in background.
+pub fn stream_chat_to_channel(
+    provider: ProviderKind,
+    api_key: String,
+    model: String,
+    messages: Vec<Message>,
+    sender: std::sync::mpsc::Sender<Result<String>>,
+) {
+    std::thread::spawn(move || {
+        get_tokio_runtime().block_on(async move {
+            let api_client = ApiClient::new();
+            match api_client.stream_chat_completion(provider, &api_key, &model, messages).await {
+                Ok(mut stream) => {
+                    while let Some(chunk_result) = stream.next().await {
+                        match chunk_result {
+                            Ok(chunk) => {
+                                if sender.send(Ok(chunk)).is_err() {
+                                    break; // Receiver dropped
+                                }
+                            }
+                            Err(e) => {
+                                let _ = sender.send(Err(e));
+                                break;
+                            }
+                        }
+                    }
+                }
+                Err(e) => {
+                    let _ = sender.send(Err(e));
+                }
+            }
+        });
+    });
+}
 
 const OPENAI_MODELS_ENDPOINT: &str = "https://api.openai.com/v1/models";
 const OPENAI_CHAT_COMPLETIONS_ENDPOINT: &str = "https://api.openai.com/v1/chat/completions";

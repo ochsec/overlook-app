@@ -1,21 +1,42 @@
 // Sidebar Component - Projects and Chat list
 use gpui::*;
+use gpui::prelude::FluentBuilder;
 use gpui_component::button::{Button, ButtonVariants};
+use gpui_component::input::{InputState, Input};
 use gpui_component::{StyledExt, scroll::ScrollbarAxis};
+use chrono::Utc;
+use uuid::Uuid;
 use crate::state::AppState;
+use crate::storage::Storage;
+use crate::types::Project;
 
 pub struct Sidebar {
     state: Entity<AppState>,
+    new_project_input: Option<Entity<InputState>>,
 }
 
 impl Sidebar {
     pub fn new(state: Entity<AppState>) -> Self {
-        Self { state }
+        Self {
+            state,
+            new_project_input: None,
+        }
+    }
+
+    fn ensure_input(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.new_project_input.is_none() {
+            self.new_project_input = Some(cx.new(|cx| {
+                InputState::new(window, cx).placeholder("Project name...")
+            }));
+        }
     }
 }
 
 impl Render for Sidebar {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        // Ensure input is initialized
+        self.ensure_input(window, cx);
+
         let state = self.state.read(cx);
         let state_model = self.state.clone();
 
@@ -25,6 +46,10 @@ impl Render for Sidebar {
         let text_primary = state.theme.text_primary;
         let text_secondary = state.theme.text_secondary;
         let separator_color = state.theme.separator;
+        let font_size = state.font_size;
+
+        // Extract project modal state
+        let show_project_input = state.show_project_modal;
 
         // Extract project data
         let is_all_selected = state.current_project_id.is_none();
@@ -61,7 +86,7 @@ impl Render for Sidebar {
                     .p_4()
                     .child(
                         div()
-                            .text_lg()
+                            .text_size(px(font_size + 4.0))
                             .font_weight(FontWeight::BOLD)
                             .text_color(text_primary)
                             .child("Overlook Chat")
@@ -79,8 +104,9 @@ impl Render for Sidebar {
                             .label("+ New Chat")
                             .w_full()
                             .on_click(move |_, _, app| {
-                                state_model.update(app, |_state, _| {
-                                    println!("New Chat clicked");
+                                state_model.update(app, |state, _| {
+                                    // Clear current chat to start fresh
+                                    state.current_chat_id = None;
                                 });
                             })
                     })
@@ -96,11 +122,77 @@ impl Render for Sidebar {
                     .gap_1()
                     .child(
                         div()
-                            .text_sm()
-                            .font_weight(FontWeight::SEMIBOLD)
-                            .text_color(text_secondary)
-                            .child("Projects")
+                            .flex()
+                            .items_center()
+                            .justify_between()
+                            .child(
+                                div()
+                                    .text_size(px(font_size - 2.0))
+                                    .font_weight(FontWeight::SEMIBOLD)
+                                    .text_color(text_secondary)
+                                    .child("Projects")
+                            )
+                            .child({
+                                let state_model = state_model.clone();
+                                Button::new("add_project")
+                                    .label("+")
+                                    .compact()
+                                    .on_click(move |_, _, app| {
+                                        state_model.update(app, |state, _| {
+                                            state.show_project_modal = !state.show_project_modal;
+                                        });
+                                    })
+                            })
                     )
+                    // New project input (shown when + is clicked)
+                    .when(show_project_input, |this| {
+                        if let Some(input) = &self.new_project_input {
+                            let input_entity = input.clone();
+                            let state_model = state_model.clone();
+                            this.child(
+                                div()
+                                    .flex()
+                                    .gap_1()
+                                    .child(
+                                        div()
+                                            .flex_1()
+                                            .child(Input::new(&input_entity))
+                                    )
+                                    .child({
+                                        let input_entity = input_entity.clone();
+                                        let state_model = state_model.clone();
+                                        Button::new("create_project")
+                                            .label("Create")
+                                            .compact()
+                                            .on_click(move |_, window, app| {
+                                                let name = input_entity.read(app).value().to_string();
+                                                let name = name.trim();
+                                                if !name.is_empty() {
+                                                    let project = Project {
+                                                        id: Uuid::new_v4().to_string(),
+                                                        name: name.to_string(),
+                                                        created_at: Utc::now(),
+                                                        updated_at: Utc::now(),
+                                                        color: None,
+                                                    };
+                                                    state_model.update(app, |state, _| {
+                                                        state.projects.insert(project.id.clone(), project);
+                                                        state.show_project_modal = false;
+                                                        if let Err(e) = Storage::save_projects(&state.projects) {
+                                                            eprintln!("Failed to save projects: {}", e);
+                                                        }
+                                                    });
+                                                    input_entity.update(app, |input, cx| {
+                                                        input.set_value("", window, cx);
+                                                    });
+                                                }
+                                            })
+                                    })
+                            )
+                        } else {
+                            this
+                        }
+                    })
                     .child(
                         div()
                             .flex()
@@ -119,16 +211,6 @@ impl Render for Sidebar {
                                 }
                                 btn
                             })
-                            .child({
-                                let state_model = state_model.clone();
-                                Button::new("add_project")
-                                    .label("+")
-                                    .on_click(move |_, _, app| {
-                                        state_model.update(app, |state, _| {
-                                            state.show_project_modal = true;
-                                        });
-                                    })
-                            })
                     )
                     .children(
                         projects.iter().map(|(proj_id, proj_name)| {
@@ -136,21 +218,43 @@ impl Render for Sidebar {
                             let project_name = proj_name.clone();
                             let is_selected = current_project_id.as_ref() == Some(&project_id);
                             let state_model = state_model.clone();
+                            let accent_color = state.theme.accent;
+                            let hover_bg = state.theme.button_bg;
 
-                            let mut btn = Button::new(SharedString::from(format!("project_{}", project_id)))
-                                .label(SharedString::from(project_name))
+                            div()
+                                .id(SharedString::from(format!("project_{}", project_id)))
+                                .flex()
+                                .items_center()
+                                .gap_2()
+                                .px_2()
+                                .py_1()
+                                .rounded_md()
+                                .cursor_pointer()
+                                .when(is_selected, |this| this.bg(accent_color))
+                                .hover(|style| style.bg(hover_bg))
+                                // Folder icon
+                                .child(
+                                    div()
+                                        .text_color(text_secondary)
+                                        .child("[P]")
+                                )
+                                // Project name
+                                .child(
+                                    div()
+                                        .flex_1()
+                                        .text_color(text_primary)
+                                        .font_weight(FontWeight::MEDIUM)
+                                        .overflow_hidden()
+                                        .text_ellipsis()
+                                        .child(project_name)
+                                )
                                 .on_click(move |_, _, app| {
                                     let pid = project_id.clone();
                                     state_model.update(app, |state, _| {
                                         state.current_project_id = Some(pid);
                                     });
-                                });
-
-                            if is_selected {
-                                btn = btn.primary();
-                            }
-
-                            btn.into_any_element()
+                                })
+                                .into_any_element()
                         }).collect::<Vec<_>>()
                     )
             )
@@ -167,8 +271,6 @@ impl Render for Sidebar {
                         div()
                             .flex()
                             .flex_col()
-                            .p_2()
-                            .gap_1()
                             .scrollable(ScrollbarAxis::Vertical)
                             .children(
                                 chats.iter().map(|(chat_id, chat_title, _)| {
@@ -176,22 +278,33 @@ impl Render for Sidebar {
                                     let title = chat_title.clone();
                                     let is_selected = current_chat_id.as_ref() == Some(&cid);
                                     let state_model = state_model.clone();
+                                    let accent_color = state.theme.accent;
+                                    let hover_bg = state.theme.button_bg;
 
-                                    let mut btn = Button::new(SharedString::from(format!("chat_{}", cid)))
-                                        .label(SharedString::from(title))
-                                        .w_full()
+                                    div()
+                                        .id(SharedString::from(format!("chat_{}", cid)))
+                                        .flex()
+                                        .items_center()
+                                        .px_3()
+                                        .py_2()
+                                        .cursor_pointer()
+                                        .when(is_selected, |this| this.bg(accent_color))
+                                        .hover(|style| style.bg(hover_bg))
+                                        .child(
+                                            div()
+                                                .text_sm()
+                                                .text_color(text_primary)
+                                                .overflow_hidden()
+                                                .text_ellipsis()
+                                                .child(title)
+                                        )
                                         .on_click(move |_, _, app| {
                                             let chat_id = cid.clone();
                                             state_model.update(app, |state, _| {
                                                 state.current_chat_id = Some(chat_id);
                                             });
-                                        });
-
-                                    if is_selected {
-                                        btn = btn.primary();
-                                    }
-
-                                    btn.into_any_element()
+                                        })
+                                        .into_any_element()
                                 }).collect::<Vec<_>>()
                             )
                     )

@@ -86,7 +86,7 @@ impl SettingsView {
                     gpui_component::slider::SliderValue::Range(v, _) => *v,
                 };
                 state_clone.update(cx, |state, _| {
-                    state.font_size = size;
+                    state.set_font_size(size);
                 });
             }
         }).detach();
@@ -110,6 +110,7 @@ impl SettingsView {
         is_url: bool,
         _state_model: Entity<AppState>,
         theme: &crate::gpui_theme::GpuiTheme,
+        font_size: f32,
         _cx: &mut Context<Self>,
     ) -> impl IntoElement {
         let theme_border = theme.border;
@@ -128,7 +129,7 @@ impl SettingsView {
             .border_color(theme_border)
             .child(
                 div()
-                    .text_sm()
+                    .text_size(px(font_size - 2.0))
                     .font_weight(FontWeight::SEMIBOLD)
                     .text_color(theme_text_primary)
                     .child(label_owned)
@@ -138,6 +139,7 @@ impl SettingsView {
                     .flex()
                     .items_center()
                     .gap_2()
+                    .text_size(px(font_size))
                     .child(
                         div()
                             .flex_1()
@@ -155,7 +157,7 @@ impl SettingsView {
             )
             .child(
                 div()
-                    .text_xs()
+                    .text_size(px(font_size - 4.0))
                     .text_color(theme_text_secondary)
                     .child(if is_url { "Local server URL" } else { "API key stored locally" })
             )
@@ -186,7 +188,7 @@ impl Render for SettingsView {
                     .border_color(theme.border)
                     .child(
                         div()
-                            .text_xl()
+                            .text_size(px(font_size + 6.0))
                             .font_weight(FontWeight::BOLD)
                             .child("Settings")
                     )
@@ -218,14 +220,14 @@ impl Render for SettingsView {
                                             .gap_2()
                                             .child(
                                                 div()
-                                                    .text_lg()
+                                                    .text_size(px(font_size + 4.0))
                                                     .font_weight(FontWeight::SEMIBOLD)
                                                     .text_color(theme.text_primary)
                                                     .child("Provider API Keys")
                                             )
                                             .child(
                                                 div()
-                                                    .text_sm()
+                                                    .text_size(px(font_size - 2.0))
                                                     .text_color(theme.text_muted)
                                                     .child("Keys are stored locally on this device.")
                                             )
@@ -237,6 +239,7 @@ impl Render for SettingsView {
                                         false,
                                         state_model.clone(),
                                         &theme,
+                                        font_size,
                                         cx,
                                     ))
                                     .child(self.render_api_key_section(
@@ -246,6 +249,7 @@ impl Render for SettingsView {
                                         false,
                                         state_model.clone(),
                                         &theme,
+                                        font_size,
                                         cx,
                                     ))
                                     .child(self.render_api_key_section(
@@ -255,6 +259,7 @@ impl Render for SettingsView {
                                         false,
                                         state_model.clone(),
                                         &theme,
+                                        font_size,
                                         cx,
                                     ))
                                     .child(self.render_api_key_section(
@@ -264,6 +269,7 @@ impl Render for SettingsView {
                                         true,
                                         state_model.clone(),
                                         &theme,
+                                        font_size,
                                         cx,
                                     ))
                                     .child(self.render_api_key_section(
@@ -273,6 +279,7 @@ impl Render for SettingsView {
                                         true,
                                         state_model.clone(),
                                         &theme,
+                                        font_size,
                                         cx,
                                     ))
                             )
@@ -288,7 +295,7 @@ impl Render for SettingsView {
                                     .border_color(theme.border)
                                     .child(
                                         div()
-                                            .text_lg()
+                                            .text_size(px(font_size + 4.0))
                                             .font_weight(FontWeight::SEMIBOLD)
                                             .text_color(theme.text_primary)
                                             .child("Appearance")
@@ -302,7 +309,7 @@ impl Render for SettingsView {
                                             .child(
                                                 div()
                                                     .w(px(100.0))
-                                                    .text_sm()
+                                                    .text_size(px(font_size - 2.0))
                                                     .text_color(theme.text_secondary)
                                                     .child("Theme:")
                                             )
@@ -348,7 +355,7 @@ impl Render for SettingsView {
                                             .child(
                                                 div()
                                                     .w(px(100.0))
-                                                    .text_sm()
+                                                    .text_size(px(font_size - 2.0))
                                                     .text_color(theme.text_secondary)
                                                     .child("Font Size:")
                                             )
@@ -359,7 +366,7 @@ impl Render for SettingsView {
                                             )
                                             .child(
                                                 div()
-                                                    .text_sm()
+                                                    .text_size(px(font_size - 2.0))
                                                     .text_color(theme.text_muted)
                                                     .child(format!("{:.0}pt", font_size))
                                             )
@@ -377,7 +384,7 @@ impl Render for SettingsView {
                                     .border_color(theme.border)
                                     .child(
                                         div()
-                                            .text_lg()
+                                            .text_size(px(font_size + 4.0))
                                             .font_weight(FontWeight::SEMIBOLD)
                                             .text_color(theme.text_primary)
                                             .child("Chat Behavior")
