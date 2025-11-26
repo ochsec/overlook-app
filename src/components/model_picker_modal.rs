@@ -6,6 +6,7 @@ use gpui_component::input::{InputState, Input};
 use gpui_component::{StyledExt, scroll::ScrollbarAxis};
 use std::collections::HashSet;
 use crate::state::AppState;
+use crate::storage::Storage;
 use crate::types::ModelDescriptor;
 
 pub struct ModelPickerModal {
@@ -334,9 +335,13 @@ fn render_model_item(
             move |_, _, app| {
                 let model_id = model_id.clone();
                 state_model.update(app, |state, _| {
-                    state.current_model = model_id;
+                    state.current_model = model_id.clone();
                     state.show_model_picker_modal = false;
                     state.model_search_query.clear();
+                    // Save the last used model
+                    if let Err(e) = Storage::save_last_model(&model_id) {
+                        eprintln!("Failed to save last model: {}", e);
+                    }
                 });
             }
         })

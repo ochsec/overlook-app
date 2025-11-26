@@ -1,7 +1,6 @@
 // Chat Input Component - Message input with attachments
 use gpui::*;
 use gpui::prelude::*;
-use gpui_component::button::{Button, ButtonVariants};
 use gpui_component::input::{InputState, Input};
 use chrono::Utc;
 use std::time::Duration;
@@ -20,7 +19,7 @@ impl ChatInput {
     pub fn new(state: Entity<AppState>, window: &mut Window, cx: &mut Context<Self>) -> Self {
         let input = cx.new(|cx| {
             InputState::new(window, cx)
-                .placeholder("Type your message here...")
+                .placeholder("_")
         });
         Self { state, input }
     }
@@ -33,18 +32,20 @@ impl Render for ChatInput {
 
         let is_sending = state.sending_message || (state.streaming_active && !state.stream_completed);
         let send_label = if state.streaming_active && !state.stream_completed {
-            "Streaming..."
+            "[streaming]"
         } else if state.sending_message {
-            "Sending..."
+            "[sending]"
         } else {
-            "Send"
+            "[send]"
         };
 
         // Extract theme values
-        let theme_surface = state.theme.surface;
+        let theme_background = state.theme.background;
         let theme_border = state.theme.border;
         let theme_text_primary = state.theme.text_primary;
-        let theme_button_bg = state.theme.button_bg;
+        let theme_text_muted = state.theme.text_muted;
+        let theme_accent = state.theme.accent;
+        let font_size = state.font_size;
 
         // Extract attachment info
         let attachments: Vec<_> = state.selected_attachments.iter()
@@ -63,9 +64,10 @@ impl Render for ChatInput {
         div()
             .flex()
             .flex_col()
-            .p_3()
-            .gap_2()
-            .bg(theme_surface)
+            .px_4()
+            .py_2()
+            .gap_1()
+            .bg(theme_background)
             .border_t_1()
             .border_color(theme_border)
             // Attachments preview (if any)
@@ -83,21 +85,20 @@ impl Render for ChatInput {
                                     .flex()
                                     .items_center()
                                     .gap_1()
-                                    .px_2()
-                                    .py_1()
-                                    .bg(theme_button_bg)
-                                    .rounded_md()
                                     .child(
                                         div()
-                                            .text_sm()
-                                            .text_color(theme_text_primary)
-                                            .child(file_name.clone())
+                                            .text_size(px(font_size - 2.0))
+                                            .text_color(theme_text_muted)
+                                            .child(format!("# attached: {}", file_name))
                                     )
                                     .child(
-                                        Button::new(SharedString::from(format!("remove_attach_{}", idx)))
-                                            .label("x")
-                                            .compact()
-                                            .on_click(move |_, _, app| {
+                                        div()
+                                            .text_size(px(font_size - 2.0))
+                                            .text_color(theme_text_muted)
+                                            .cursor_pointer()
+                                            .hover(|s| s.text_color(theme_text_primary))
+                                            .child("[x]")
+                                            .on_mouse_down(MouseButton::Left, move |_, _, app| {
                                                 state_model.update(app, |state, _| {
                                                     if idx < state.selected_attachments.len() {
                                                         state.selected_attachments.remove(idx);
@@ -110,39 +111,61 @@ impl Render for ChatInput {
                         )
                 )
             })
-            // Input row
+            // Input row with terminal prompt style
             .child(
                 div()
                     .flex()
                     .items_center()
                     .gap_2()
+                    // Prompt indicator
+                    .child(
+                        div()
+                            .text_size(px(font_size))
+                            .text_color(theme_accent)
+                            .font_weight(FontWeight::BOLD)
+                            .child(">")
+                    )
+                    .child(
+                        // Text input area - terminal style (no background/border)
+                        div()
+                            .flex_1()
+                            .child(
+                                Input::new(&self.input)
+                                    .cleanable(false)
+                                    .appearance(false)
+                                    .text_size(px(font_size))
+                                    .text_color(theme_text_primary)
+                                    .line_height(px(font_size + 4.0))
+                            )
+                    )
                     .child({
-                        // Attach button
+                        // Attach button (minimal)
                         let state_model = state_model.clone();
-                        Button::new("attach_btn")
-                            .label("Attach")
-                            .on_click(move |_, _, app| {
+                        div()
+                            .text_size(px(font_size - 2.0))
+                            .text_color(theme_text_muted)
+                            .cursor_pointer()
+                            .hover(|s| s.text_color(theme_text_primary))
+                            .child("[attach]")
+                            .on_mouse_down(MouseButton::Left, move |_, _, app| {
                                 state_model.update(app, |_state, _| {
                                     println!("Attach clicked");
                                 });
                             })
                     })
                     .child(
-                        // Text input area
+                        // Send button (minimal text style)
                         div()
-                            .flex_1()
-                            .child(Input::new(&self.input).cleanable(true))
-                    )
-                    .child({
-                        // Send button
-                        let state_model = state_model.clone();
-                        let input_entity = self.input.clone();
-                        let mut btn = Button::new("send_btn")
-                            .label(send_label)
-                            .primary();
-
-                        if !is_sending {
-                            btn = btn.on_click(move |_, window, app| {
+                            .id("send_btn")
+                            .text_size(px(font_size - 2.0))
+                            .text_color(if is_sending { theme_text_muted } else { theme_text_primary })
+                            .cursor_pointer()
+                            .when(!is_sending, |this| this.hover(|s| s.text_color(theme_accent)))
+                            .child(send_label)
+                            .when(!is_sending, |this| {
+                                let state_model = state_model.clone();
+                                let input_entity = self.input.clone();
+                                this.on_click(move |_, window, app| {
                                 // Read message from input
                                 let message_text = input_entity.read(app).value().to_string();
                                 let message_text = message_text.trim().to_string();
@@ -472,10 +495,9 @@ impl Render for ChatInput {
                                         }
                                     }).detach();
                                 }
-                            });
-                        }
-                        btn
-                    })
+                                })
+                            })
+                    )
             )
     }
 }

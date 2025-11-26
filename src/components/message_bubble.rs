@@ -1,4 +1,4 @@
-// Message Bubble Component - Renders chat messages
+// Message Component - Terminal-style chat messages
 use gpui::*;
 use gpui::prelude::*;
 use crate::gpui_theme::GpuiTheme;
@@ -22,50 +22,64 @@ impl MessageBubble {
         let font_size = self.font_size;
 
         if is_system {
-            // System messages (like search results) - centered, muted
+            // System messages - muted, with # prefix
             div()
                 .flex()
-                .justify_center()
-                .py_2()
+                .px_4()
+                .py_1()
                 .child(
                     div()
-                        .max_w(px(800.0))
-                        .px_4()
-                        .py_2()
-                        .bg(self.theme.assistant_message_bg)
-                        .rounded_lg()
-                        .text_color(self.theme.text_muted)
-                        .text_size(px(font_size - 2.0))
-                        .italic()
-                        .child(self.message.content.clone())
+                        .flex()
+                        .gap_2()
+                        .child(
+                            div()
+                                .text_color(self.theme.text_muted)
+                                .text_size(px(font_size))
+                                .child("#")
+                        )
+                        .child(
+                            div()
+                                .flex_1()
+                                .text_color(self.theme.text_muted)
+                                .text_size(px(font_size - 1.0))
+                                .italic()
+                                .child(self.message.content.clone())
+                        )
                 )
         } else if is_user {
-            // User message - right aligned, accent color
+            // User message - with > prompt prefix
             div()
                 .flex()
-                .justify_end()
-                .py_2()
-                .pr_4()
+                .px_4()
+                .py_1()
                 .child(
                     div()
-                        .max_w_3_4() // 75% max width
-                        .px_4()
-                        .py_3()
-                        .bg(self.theme.user_message_bg)
-                        .rounded_lg()
-                        .text_color(self.theme.user_message_text)
-                        .text_size(px(font_size))
-                        .child(self.message.content.clone())
+                        .flex()
+                        .gap_2()
+                        .child(
+                            div()
+                                .text_color(self.theme.accent)
+                                .text_size(px(font_size))
+                                .font_weight(FontWeight::BOLD)
+                                .child(">")
+                        )
+                        .child(
+                            div()
+                                .flex_1()
+                                .text_color(self.theme.text_primary)
+                                .text_size(px(font_size))
+                                .child(self.message.content.clone())
+                        )
                 )
         } else {
-            // Assistant message - left aligned, surface color
+            // Assistant message - no prefix, model info inline
             div()
                 .flex()
                 .flex_col()
-                .py_2()
-                .pl_4()
-                .gap_1()
-                // Model badge (if available)
+                .px_4()
+                .py_1()
+                .gap_0()
+                // Model info line (if available)
                 .when(self.message.provider.is_some() && self.message.model.is_some(), |this| {
                     let provider_name = self.message.provider
                         .as_ref()
@@ -78,22 +92,15 @@ impl MessageBubble {
 
                     this.child(
                         div()
-                            .text_xs()
+                            .text_size(px(font_size - 2.0))
                             .text_color(self.theme.text_muted)
-                            .italic()
-                            .child(format!("{}: {}", provider_name, model_name))
+                            .child(format!("--- {} ({}) ---", model_name, provider_name))
                     )
                 })
                 .child(
                     div()
-                        .max_w_4_5() // 80% max width
-                        .px_4()
-                        .py_3()
-                        .bg(self.theme.assistant_message_bg)
-                        .rounded_lg()
-                        .text_color(self.theme.assistant_message_text)
+                        .text_color(self.theme.text_secondary)
                         .text_size(px(font_size))
-                        // TODO: Add markdown rendering
                         .child(self.message.content.clone())
                 )
         }
@@ -105,29 +112,20 @@ pub fn render_streaming_message(content: &str, theme: &GpuiTheme, font_size: f32
     div()
         .flex()
         .flex_col()
-        .py_2()
-        .pl_4()
-        .gap_1()
+        .px_4()
+        .py_1()
         .child(
             div()
-                .max_w_4_5()
-                .px_4()
-                .py_3()
-                .bg(theme.assistant_message_bg)
-                .rounded_lg()
-                .text_color(theme.assistant_message_text)
+                .flex()
+                .text_color(theme.text_secondary)
                 .text_size(px(font_size))
-                .child(
-                    div()
-                        .flex()
-                        .child(content.to_string())
-                        .when(show_cursor, |this| {
-                            this.child(
-                                div()
-                                    .text_color(theme.assistant_message_text)
-                                    .child("▊")
-                            )
-                        })
-                )
+                .child(content.to_string())
+                .when(show_cursor, |this| {
+                    this.child(
+                        div()
+                            .text_color(theme.accent)
+                            .child("▊")
+                    )
+                })
         )
 }

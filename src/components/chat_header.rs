@@ -5,6 +5,7 @@ use gpui_component::button::Button;
 use gpui_component::menu::{DropdownMenu, PopupMenuItem};
 use crate::api::{ApiClient, run_on_tokio_async};
 use crate::state::AppState;
+use crate::storage::Storage;
 use crate::types::ProviderKind;
 
 pub struct ChatHeader {
@@ -90,6 +91,10 @@ impl Render for ChatHeader {
                                             state.current_model.clear();
                                             state.available_models.clear();
                                             state.loading_models = true;
+                                            // Save the last used provider
+                                            if let Err(e) = Storage::save_last_provider(&provider) {
+                                                eprintln!("Failed to save last provider: {}", e);
+                                            }
                                         });
 
                                         // Spawn async task to load models
@@ -132,6 +137,10 @@ impl Render for ChatHeader {
                                             state.current_model.clear();
                                             state.available_models.clear();
                                             state.loading_models = true;
+                                            // Save the last used provider
+                                            if let Err(e) = Storage::save_last_provider(&provider) {
+                                                eprintln!("Failed to save last provider: {}", e);
+                                            }
                                         });
 
                                         app.spawn({
@@ -173,6 +182,10 @@ impl Render for ChatHeader {
                                             state.current_model.clear();
                                             state.available_models.clear();
                                             state.loading_models = true;
+                                            // Save the last used provider
+                                            if let Err(e) = Storage::save_last_provider(&provider) {
+                                                eprintln!("Failed to save last provider: {}", e);
+                                            }
                                         });
 
                                         app.spawn({
@@ -214,6 +227,10 @@ impl Render for ChatHeader {
                                             state.current_model.clear();
                                             state.available_models.clear();
                                             state.loading_models = true;
+                                            // Save the last used provider
+                                            if let Err(e) = Storage::save_last_provider(&provider) {
+                                                eprintln!("Failed to save last provider: {}", e);
+                                            }
                                         });
 
                                         app.spawn({
@@ -255,6 +272,10 @@ impl Render for ChatHeader {
                                             state.current_model.clear();
                                             state.available_models.clear();
                                             state.loading_models = true;
+                                            // Save the last used provider
+                                            if let Err(e) = Storage::save_last_provider(&provider) {
+                                                eprintln!("Failed to save last provider: {}", e);
+                                            }
                                         });
 
                                         app.spawn({

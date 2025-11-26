@@ -80,8 +80,8 @@ impl AppState {
             font_size,
 
             api_keys: Storage::load_api_keys().unwrap_or_default(),
-            current_provider: ProviderKind::default(),
-            current_model: String::default(),
+            current_provider: Storage::load_last_provider().unwrap_or_default(),
+            current_model: Storage::load_last_model().unwrap_or_default(),
             available_models: Vec::new(),
             loading_models: false,
 

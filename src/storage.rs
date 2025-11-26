@@ -336,6 +336,61 @@ impl Storage {
         }
         Ok(())
     }
+
+    pub fn load_last_provider() -> Result<crate::types::ProviderKind> {
+        if let Some(data_dir) = dirs::config_dir() {
+            let app_dir = data_dir.join("overlook");
+            if let Ok(provider_data) = std::fs::read_to_string(app_dir.join("last_provider.txt")) {
+                match provider_data.trim() {
+                    "OpenRouter" => return Ok(crate::types::ProviderKind::OpenRouter),
+                    "OpenAI" => return Ok(crate::types::ProviderKind::OpenAI),
+                    "Anthropic" => return Ok(crate::types::ProviderKind::Anthropic),
+                    "LMStudio" => return Ok(crate::types::ProviderKind::LMStudio),
+                    "Ollama" => return Ok(crate::types::ProviderKind::Ollama),
+                    _ => {}
+                }
+            }
+        }
+        Ok(crate::types::ProviderKind::default())
+    }
+
+    pub fn save_last_provider(provider: &crate::types::ProviderKind) -> Result<()> {
+        if let Some(data_dir) = dirs::config_dir() {
+            let app_dir = data_dir.join("overlook");
+            std::fs::create_dir_all(&app_dir)?;
+            let provider_str = match provider {
+                crate::types::ProviderKind::OpenRouter => "OpenRouter",
+                crate::types::ProviderKind::OpenAI => "OpenAI",
+                crate::types::ProviderKind::Anthropic => "Anthropic",
+                crate::types::ProviderKind::LMStudio => "LMStudio",
+                crate::types::ProviderKind::Ollama => "Ollama",
+            };
+            std::fs::write(app_dir.join("last_provider.txt"), provider_str)?;
+        }
+        Ok(())
+    }
+
+    pub fn load_last_model() -> Result<String> {
+        if let Some(data_dir) = dirs::config_dir() {
+            let app_dir = data_dir.join("overlook");
+            if let Ok(model_data) = std::fs::read_to_string(app_dir.join("last_model.txt")) {
+                let model = model_data.trim().to_string();
+                if !model.is_empty() {
+                    return Ok(model);
+                }
+            }
+        }
+        Ok(String::new())
+    }
+
+    pub fn save_last_model(model: &str) -> Result<()> {
+        if let Some(data_dir) = dirs::config_dir() {
+            let app_dir = data_dir.join("overlook");
+            std::fs::create_dir_all(&app_dir)?;
+            std::fs::write(app_dir.join("last_model.txt"), model)?;
+        }
+        Ok(())
+    }
 }
 
 // Encryption functions (disabled)
