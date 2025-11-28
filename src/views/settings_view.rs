@@ -6,6 +6,7 @@ use gpui_component::input::{InputState, Input};
 use gpui_component::switch::Switch;
 use gpui_component::slider::{SliderState, Slider, SliderEvent};
 use gpui_component::menu::{DropdownMenu, PopupMenuItem};
+use gpui_component::theme::{Theme, ThemeMode};
 use gpui_component::{StyledExt, scroll::ScrollbarAxis};
 use crate::state::AppState;
 use crate::types::ProviderKind;
@@ -328,6 +329,8 @@ impl Render for SettingsView {
                                                                         state_model.update(app, |state, _| {
                                                                             state.switch_theme(ThemeType::OneLight);
                                                                         });
+                                                                        // Also update gpui_component theme
+                                                                        Theme::change(ThemeMode::Light, None, app);
                                                                     }
                                                                 }),
                                                         )
@@ -340,6 +343,8 @@ impl Render for SettingsView {
                                                                         state_model.update(app, |state, _| {
                                                                             state.switch_theme(ThemeType::OneDark);
                                                                         });
+                                                                        // Also update gpui_component theme
+                                                                        Theme::change(ThemeMode::Dark, None, app);
                                                                     }
                                                                 }),
                                                         )

@@ -21,7 +21,9 @@ mod gpui_app;
 
 use gpui::*;
 use gpui_component::*;
+use gpui_component::theme::{Theme, ThemeMode};
 use gpui_app::OverlookApp;
+use gpui_theme::ThemeType;
 
 fn main() {
     // Load environment variables from .env file
@@ -32,6 +34,14 @@ fn main() {
     app.run(move |cx| {
         // Initialize gpui-component first
         gpui_component::init(cx);
+
+        // Sync gpui_component theme with our app theme
+        let saved_theme = storage::Storage::load_theme().unwrap_or_default();
+        let theme_mode = match saved_theme {
+            ThemeType::OneLight => ThemeMode::Light,
+            ThemeType::OneDark => ThemeMode::Dark,
+        };
+        Theme::change(theme_mode, None, cx);
 
         cx.spawn(async move |cx| {
             cx.open_window(

@@ -204,6 +204,7 @@ impl Render for ChatInput {
                                     attachments: Vec::new(),
                                     provider: Some(provider),
                                     model: Some(model.clone()),
+                                    search_results: None,
                                 };
 
                                 // Create or update chat
@@ -302,6 +303,7 @@ impl Render for ChatInput {
                                                         attachments: Vec::new(),
                                                         provider: Some(provider),
                                                         model: Some(model.clone()),
+                                                        search_results: None,
                                                     };
 
                                                     let api_client = ApiClient::new();
@@ -320,9 +322,9 @@ impl Render for ChatInput {
                                                                             println!("Searching for: {}", query);
                                                                             // Perform the search
                                                                             match search_orchestrator.search_and_format(&query).await {
-                                                                                Ok(results) => {
+                                                                                Ok((formatted, results)) => {
                                                                                     println!("Search completed successfully");
-                                                                                    return Some(results);
+                                                                                    return Some((formatted, results));
                                                                                 }
                                                                                 Err(e) => {
                                                                                     eprintln!("Search failed: {}", e);
@@ -343,7 +345,7 @@ impl Render for ChatInput {
                                             }).await;
 
                                             // If we got search results, add them as a system message
-                                            if let Some(search_context) = search_result {
+                                            if let Some((search_context, search_results)) = search_result {
                                                 let search_message = Message {
                                                     role: "system".to_string(),
                                                     content: search_context,
@@ -351,6 +353,7 @@ impl Render for ChatInput {
                                                     attachments: Vec::new(),
                                                     provider: Some(provider),
                                                     model: Some(model.clone()),
+                                                    search_results: if search_results.is_empty() { None } else { Some(search_results) },
                                                 };
                                                 // Insert at the beginning
                                                 final_api_messages.insert(0, search_message);
@@ -416,6 +419,7 @@ impl Render for ChatInput {
                                                             attachments: Vec::new(),
                                                             provider: Some(provider),
                                                             model: Some(model_for_result.clone()),
+                                                            search_results: None,
                                                         };
 
                                                         // Add to chat
@@ -471,6 +475,7 @@ impl Render for ChatInput {
                                                                 attachments: Vec::new(),
                                                                 provider: Some(provider),
                                                                 model: Some(model_for_result.clone()),
+                                                                search_results: None,
                                                             };
 
                                                             // Add to chat

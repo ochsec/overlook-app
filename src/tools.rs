@@ -4,14 +4,9 @@ use serde_json;
 use std::env;
 use std::time::Duration;
 
-const SEARXNG_SEARCH_ENDPOINT: &str = "/search";
+use crate::types::SearchResult;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SearchResult {
-    pub title: String,
-    pub url: String,
-    pub content: String,
-}
+const SEARXNG_SEARCH_ENDPOINT: &str = "/search";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SearchDecision {
@@ -185,15 +180,19 @@ Your decision (JSON only):"#, user_query)
     }
 
     /// Performs a search and formats results for LLM context
-    pub async fn search_and_format(&self, query: &str) -> Result<String> {
+    /// Returns (formatted_string, structured_results)
+    pub async fn search_and_format(&self, query: &str) -> Result<(String, Vec<SearchResult>)> {
         let search_tool = self.create_search_tool()?;
 
         let results = search_tool.search(query, Some(10)).await?;
 
         if results.is_empty() {
-            return Ok(format!(
-                "Web search found no results for: {}\n\nPlease answer based on your training data.",
-                query
+            return Ok((
+                format!(
+                    "Web search found no results for: {}\n\nPlease answer based on your training data.",
+                    query
+                ),
+                Vec::new(),
             ));
         }
 
@@ -213,6 +212,6 @@ Your decision (JSON only):"#, user_query)
 
         formatted.push_str("\nPlease use the above search results to answer the user's question. Cite sources when appropriate.\n");
 
-        Ok(formatted)
+        Ok((formatted, results))
     }
 }

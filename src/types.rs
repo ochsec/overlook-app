@@ -98,6 +98,13 @@ pub enum AttachmentData {
     Text { content: String }, // For processed PDFs and text files
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SearchResult {
+    pub title: String,
+    pub url: String,
+    pub content: String,
+}
+
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct Message {
     pub role: String,
@@ -108,6 +115,8 @@ pub struct Message {
     pub provider: Option<ProviderKind>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub model: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub search_results: Option<Vec<SearchResult>>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
