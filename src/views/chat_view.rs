@@ -202,7 +202,10 @@ impl ChatView {
                             let is_expanded = expanded_indices.contains(&idx);
                             self.render_search_results_element(idx, msg, is_expanded, cx).into_any_element()
                         } else {
-                            MessageBubble::new(msg.clone(), theme.clone(), font_size).render_element().into_any_element()
+                            MessageBubble::new(msg.clone(), theme.clone(), font_size)
+                                .with_index(idx)
+                                .render_element()
+                                .into_any_element()
                         }
                     }).collect();
 
