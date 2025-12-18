@@ -173,6 +173,7 @@ impl Render for SettingsView {
         let theme = state.theme.clone();
         let current_theme_type = state.theme_type;
         let streaming_enabled = state.streaming_enabled;
+        let confirm_delete_chat = state.confirm_delete_chat;
         let font_size = state.font_size;
 
         div()
@@ -407,6 +408,24 @@ impl Render for SettingsView {
                                                     .on_click(move |checked, _, app| {
                                                         state_model.update(app, |state, _| {
                                                             state.streaming_enabled = *checked;
+                                                        });
+                                                    })
+                                            })
+                                    )
+                                    .child(
+                                        div()
+                                            .flex()
+                                            .items_center()
+                                            .gap_4()
+                                            .child({
+                                                let state_model = state_model.clone();
+                                                Switch::new("confirm_delete_toggle")
+                                                    .checked(confirm_delete_chat)
+                                                    .label("Confirm before deleting chats")
+                                                    .on_click(move |checked, _, app| {
+                                                        state_model.update(app, |state, _| {
+                                                            state.confirm_delete_chat = *checked;
+                                                            crate::storage::Storage::save_confirm_delete_chat(*checked).ok();
                                                         });
                                                     })
                                             })

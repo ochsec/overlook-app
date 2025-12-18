@@ -13,6 +13,7 @@ use crate::types::Project;
 pub struct Sidebar {
     state: Entity<AppState>,
     new_project_input: Option<Entity<InputState>>,
+    pending_delete_chat_id: Option<String>,
 }
 
 impl Sidebar {
@@ -20,6 +21,7 @@ impl Sidebar {
         Self {
             state,
             new_project_input: None,
+            pending_delete_chat_id: None,
         }
     }
 
@@ -29,6 +31,41 @@ impl Sidebar {
                 InputState::new(window, cx).placeholder("Project name...")
             }));
         }
+    }
+
+    fn request_delete(&mut self, chat_id: String, cx: &mut Context<Self>) {
+        let confirm_required = self.state.read(cx).confirm_delete_chat;
+        if confirm_required {
+            self.pending_delete_chat_id = Some(chat_id);
+            cx.notify();
+        } else {
+            self.delete_chat(chat_id, cx);
+        }
+    }
+
+    fn cancel_delete(&mut self, cx: &mut Context<Self>) {
+        self.pending_delete_chat_id = None;
+        cx.notify();
+    }
+
+    fn delete_chat(&mut self, chat_id: String, cx: &mut Context<Self>) {
+        self.state.update(cx, |state, _| {
+            // Remove the chat
+            state.chats.remove(&chat_id);
+
+            // Clear current_chat_id if we deleted the active chat
+            if state.current_chat_id.as_ref() == Some(&chat_id) {
+                state.current_chat_id = None;
+            }
+
+            // Save to storage
+            if let Err(e) = Storage::save_chats(&state.chats) {
+                eprintln!("Failed to save chats after deletion: {}", e);
+            }
+        });
+
+        self.pending_delete_chat_id = None;
+        cx.notify();
     }
 }
 
@@ -261,7 +298,12 @@ impl Render for Sidebar {
             // Separator
             .child(div().h(px(1.0)).bg(separator_color))
             // Chats list
-            .child(
+            .child({
+                let pending_delete = self.pending_delete_chat_id.clone();
+                let accent_color = state.theme.accent;
+                let hover_bg = state.theme.button_bg;
+                let danger_color = state.theme.danger;
+
                 div()
                     .flex()
                     .flex_col()
@@ -277,37 +319,105 @@ impl Render for Sidebar {
                                     let cid = chat_id.clone();
                                     let title = chat_title.clone();
                                     let is_selected = current_chat_id.as_ref() == Some(&cid);
+                                    let is_pending_delete = pending_delete.as_ref() == Some(&cid);
                                     let state_model = state_model.clone();
-                                    let accent_color = state.theme.accent;
-                                    let hover_bg = state.theme.button_bg;
 
-                                    div()
-                                        .id(SharedString::from(format!("chat_{}", cid)))
-                                        .flex()
-                                        .items_center()
-                                        .px_3()
-                                        .py_2()
-                                        .cursor_pointer()
-                                        .when(is_selected, |this| this.bg(accent_color))
-                                        .hover(|style| style.bg(hover_bg))
-                                        .child(
-                                            div()
-                                                .text_sm()
-                                                .text_color(text_primary)
-                                                .overflow_hidden()
-                                                .text_ellipsis()
-                                                .child(title)
-                                        )
-                                        .on_click(move |_, _, app| {
-                                            let chat_id = cid.clone();
-                                            state_model.update(app, |state, _| {
-                                                state.current_chat_id = Some(chat_id);
-                                            });
-                                        })
-                                        .into_any_element()
+                                    if is_pending_delete {
+                                        // Show delete confirmation (matching chat row style)
+                                        let cid_confirm = cid.clone();
+                                        div()
+                                            .id(SharedString::from(format!("chat_{}", cid)))
+                                            .flex()
+                                            .items_center()
+                                            .justify_between()
+                                            .px_3()
+                                            .py_2()
+                                            .child(
+                                                div()
+                                                    .flex_1()
+                                                    .text_sm()
+                                                    .text_color(text_primary)
+                                                    .child("Delete?")
+                                            )
+                                            .child(
+                                                div()
+                                                    .flex()
+                                                    .gap_1()
+                                                    .child(
+                                                        div()
+                                                            .id(SharedString::from(format!("confirm_{}", cid)))
+                                                            .text_sm()
+                                                            .text_color(text_secondary)
+                                                            .cursor_pointer()
+                                                            .hover(|s| s.text_color(danger_color))
+                                                            .child("[y]")
+                                                            .on_click(cx.listener(move |this, _, _, cx| {
+                                                                this.delete_chat(cid_confirm.clone(), cx);
+                                                            }))
+                                                    )
+                                                    .child(
+                                                        div()
+                                                            .id(SharedString::from(format!("cancel_{}", cid)))
+                                                            .text_sm()
+                                                            .text_color(text_secondary)
+                                                            .cursor_pointer()
+                                                            .hover(|s| s.text_color(accent_color))
+                                                            .child("[n]")
+                                                            .on_click(cx.listener(|this, _, _, cx| {
+                                                                this.cancel_delete(cx);
+                                                            }))
+                                                    )
+                                            )
+                                            .into_any_element()
+                                    } else {
+                                        // Normal chat row with delete button
+                                        let cid_select = cid.clone();
+                                        let cid_delete = cid.clone();
+                                        div()
+                                            .id(SharedString::from(format!("chat_{}", cid)))
+                                            .flex()
+                                            .items_center()
+                                            .justify_between()
+                                            .px_3()
+                                            .py_2()
+                                            .cursor_pointer()
+                                            .when(is_selected, |this| this.bg(accent_color))
+                                            .hover(|style| style.bg(hover_bg))
+                                            .on_click({
+                                                let state_model = state_model.clone();
+                                                move |_, _, app| {
+                                                    let chat_id = cid_select.clone();
+                                                    state_model.update(app, |state, _| {
+                                                        state.current_chat_id = Some(chat_id);
+                                                    });
+                                                }
+                                            })
+                                            .child(
+                                                div()
+                                                    .flex_1()
+                                                    .text_sm()
+                                                    .text_color(text_primary)
+                                                    .overflow_hidden()
+                                                    .text_ellipsis()
+                                                    .child(title)
+                                            )
+                                            .child(
+                                                div()
+                                                    .id(SharedString::from(format!("delete_{}", cid)))
+                                                    .text_sm()
+                                                    .text_color(text_secondary)
+                                                    .cursor_pointer()
+                                                    .hover(|s| s.text_color(danger_color))
+                                                    .child("[x]")
+                                                    .on_click(cx.listener(move |this, _, _, cx| {
+                                                        this.request_delete(cid_delete.clone(), cx);
+                                                    }))
+                                            )
+                                            .into_any_element()
+                                    }
                                 }).collect::<Vec<_>>()
                             )
                     )
-            )
+            })
     }
 }

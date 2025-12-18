@@ -50,6 +50,7 @@ pub struct AppState {
     pub model_search_query: String,
     pub favorite_models: Vec<String>,
     pub api_key_masked: bool,
+    pub confirm_delete_chat: bool,
 
     // Message input state
     pub message_input: String,
@@ -64,6 +65,7 @@ pub struct AppState {
     pub streaming_message_persisted: bool,
 
     // Export state
+    pub export_selected_chat_id: Option<String>,
     pub last_export_result: Option<Result<String, String>>,
 }
 
@@ -98,6 +100,7 @@ impl AppState {
             model_search_query: String::new(),
             favorite_models: Vec::new(),
             api_key_masked: true,
+            confirm_delete_chat: Storage::load_confirm_delete_chat().unwrap_or(true),
 
             message_input: String::new(),
             selected_attachments: Vec::new(),
@@ -109,6 +112,7 @@ impl AppState {
             stream_completed: false,
             streaming_message_persisted: false,
 
+            export_selected_chat_id: None,
             last_export_result: None,
         }
     }

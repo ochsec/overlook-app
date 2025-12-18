@@ -1,8 +1,10 @@
-// Message Component - Terminal-style chat messages
+// Message Component - Terminal-style chat messages with markdown support
 use gpui::*;
 use gpui::prelude::*;
 use crate::gpui_theme::GpuiTheme;
+use crate::markdown::render_markdown;
 use crate::types::Message;
+use crate::components::attachment_preview::render_message_attachments;
 
 pub struct MessageBubble {
     message: Message,
@@ -48,8 +50,13 @@ impl MessageBubble {
                 )
         } else if is_user {
             // User message - with > prompt prefix
+            let has_attachments = !self.message.attachments.is_empty();
+            let attachments = self.message.attachments.clone();
+            let theme_for_attachments = self.theme.clone();
+
             div()
                 .flex()
+                .flex_col()
                 .px_4()
                 .py_1()
                 .child(
@@ -71,8 +78,19 @@ impl MessageBubble {
                                 .child(self.message.content.clone())
                         )
                 )
+                // Show attachments if present
+                .when(has_attachments, |this| {
+                    this.child(
+                        div()
+                            .pl_4()
+                            .child(render_message_attachments(&attachments, &theme_for_attachments, font_size))
+                    )
+                })
         } else {
-            // Assistant message - no prefix, model info inline
+            // Assistant message - with markdown rendering
+            let content = self.message.content.clone();
+            let theme_clone = self.theme.clone();
+
             div()
                 .flex()
                 .flex_col()
@@ -97,12 +115,8 @@ impl MessageBubble {
                             .child(format!("--- {} ({}) ---", model_name, provider_name))
                     )
                 })
-                .child(
-                    div()
-                        .text_color(self.theme.text_secondary)
-                        .text_size(px(font_size))
-                        .child(self.message.content.clone())
-                )
+                // Render content with markdown
+                .child(render_markdown(&content, &theme_clone, font_size))
         }
     }
 }

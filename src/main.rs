@@ -4,7 +4,7 @@
 mod api;
 mod attachments;
 mod export;
-// mod markdown_renderer;  // TODO: Port to GPUI in later phase
+mod markdown;  // New markdown renderer for GPUI
 mod storage;
 // mod theme;  // Old egui theme - backed up as reference
 mod gpui_theme;  // New GPUI theme

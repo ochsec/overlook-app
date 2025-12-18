@@ -45,6 +45,7 @@ pub struct GpuiTheme {
     pub accent_hover: Hsla,
     pub border: Hsla,
     pub separator: Hsla,
+    pub danger: Hsla,
 
     // Message bubble colors
     pub user_message_bg: Hsla,
@@ -82,6 +83,7 @@ impl GpuiTheme {
             accent_hover: rgb(0x2d64dc).into(),         // #2d64dc
             border: rgb(0xe4e5e9).into(),               // #e4e5e9
             separator: rgb(0xeaecef).into(),            // #eaecef
+            danger: rgb(0xe45649).into(),               // #e45649 (One Light red)
 
             user_message_bg: rgb(0x4078f2).into(),      // #4078f2
             user_message_text: white(),
@@ -116,6 +118,7 @@ impl GpuiTheme {
             accent_hover: rgb(0x4b9bdc).into(),         // #4b9bdc
             border: rgb(0x373b45).into(),               // #373b45
             separator: rgb(0x323640).into(),            // #323640
+            danger: rgb(0xe06c75).into(),               // #e06c75 (One Dark red)
 
             user_message_bg: rgb(0x61afef).into(),      // #61afef
             user_message_text: white(),
