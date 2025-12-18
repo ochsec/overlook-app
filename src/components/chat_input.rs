@@ -163,6 +163,80 @@ impl ChatInput {
         }
     }
 
+    /// Resubmit the current chat to get a new AI response.
+    /// Used after editing a message to regenerate the response.
+    pub fn resubmit_chat(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
+        let state_model = self.state.clone();
+
+        // Check if already sending
+        let is_sending = {
+            let state = self.state.read(cx);
+            state.sending_message || (state.streaming_active && !state.stream_completed)
+        };
+
+        if is_sending {
+            return;
+        }
+
+        // Extract values needed for async task
+        let (provider, model, api_key, chat_id, api_messages, user_query) = {
+            let state = state_model.read(cx);
+            if state.current_model.is_empty() {
+                println!("No model selected");
+                return;
+            }
+
+            let chat_id = match &state.current_chat_id {
+                Some(id) => id.clone(),
+                None => {
+                    println!("No chat selected");
+                    return;
+                }
+            };
+
+            let messages = state.chats.get(&chat_id)
+                .map(|chat| chat.messages.clone())
+                .unwrap_or_default();
+
+            if messages.is_empty() {
+                println!("No messages in chat");
+                return;
+            }
+
+            // Get the last user message for potential web search
+            let last_user_query = messages.iter()
+                .rev()
+                .find(|m| m.role == "user")
+                .map(|m| m.content.clone())
+                .unwrap_or_default();
+
+            let api_key = state.api_keys.get(state.current_provider).to_string();
+
+            (
+                state.current_provider,
+                state.current_model.clone(),
+                api_key,
+                chat_id,
+                messages,
+                last_user_query,
+            )
+        };
+
+        // Set sending state
+        state_model.update(cx, |state, _| {
+            state.sending_message = true;
+        });
+
+        // Check if streaming is enabled
+        let streaming_enabled = state_model.read(cx).streaming_enabled;
+
+        if streaming_enabled {
+            Self::send_streaming_message(state_model, chat_id, model, provider, api_key, api_messages, user_query, cx);
+        } else {
+            Self::send_non_streaming_message(state_model, chat_id, model, provider, api_key, api_messages, cx);
+        }
+    }
+
     fn send_streaming_message(
         state_model: Entity<AppState>,
         chat_id: String,
