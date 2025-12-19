@@ -1,5 +1,6 @@
 // Markdown Renderer - Converts markdown to GPUI elements
 use gpui::*;
+use gpui_component::{StyledExt, scroll::ScrollbarAxis};
 use pulldown_cmark::{Parser, Event, Tag, TagEnd, CodeBlockKind, Options};
 use syntect::parsing::SyntaxSet;
 use syntect::highlighting::{ThemeSet, Style, Color as SyntectColor};
@@ -271,6 +272,7 @@ impl MarkdownRenderer {
         div()
             .text_size(px(self.font_size))
             .text_color(self.theme.text_secondary)
+            .whitespace_normal()
             .child(text)
             .into_any_element()
     }
@@ -283,6 +285,7 @@ impl MarkdownRenderer {
             div()
                 .text_size(px(self.font_size))
                 .text_color(self.theme.text_secondary)
+                .whitespace_normal()
                 .child(content)
                 .into_any_element()
         }
@@ -304,6 +307,7 @@ impl MarkdownRenderer {
                             div()
                                 .text_size(px(self.font_size))
                                 .text_color(self.theme.text_secondary)
+                                .whitespace_normal()
                                 .child(current.clone())
                                 .into_any_element()
                         );
@@ -325,6 +329,7 @@ impl MarkdownRenderer {
                     div()
                         .text_size(px(self.font_size))
                         .text_color(self.theme.text_secondary)
+                        .whitespace_normal()
                         .child(current)
                         .into_any_element()
                 );
@@ -353,6 +358,7 @@ impl MarkdownRenderer {
             .text_size(px(self.font_size + size_offset))
             .font_weight(weight)
             .text_color(self.theme.text_primary)
+            .whitespace_normal()
             .py_1()
             .child(content)
             .into_any_element()
@@ -459,12 +465,15 @@ impl MarkdownRenderer {
         div()
             .flex()
             .pl_3()
+            .pr_4()
             .border_l_2()
             .border_color(self.theme.accent)
             .child(
                 div()
+                    .flex_1()
                     .text_size(px(self.font_size))
                     .text_color(self.theme.text_muted)
+                    .whitespace_normal()
                     .italic()
                     .child(content)
             )
@@ -493,6 +502,7 @@ impl MarkdownRenderer {
                         .flex_1()
                         .text_size(px(self.font_size))
                         .text_color(self.theme.text_secondary)
+                        .whitespace_normal()
                         .child(item.clone())
                 )
                 .into_any_element()
@@ -502,6 +512,7 @@ impl MarkdownRenderer {
             .flex()
             .flex_col()
             .pl_2()
+            .pr_4()
             .gap_1()
             .children(elements)
             .into_any_element()
@@ -511,6 +522,7 @@ impl MarkdownRenderer {
         div()
             .text_size(px(self.font_size))
             .text_color(self.theme.text_secondary)
+            .whitespace_normal()
             .italic()
             .child(content)
             .into_any_element()
@@ -520,6 +532,7 @@ impl MarkdownRenderer {
         div()
             .text_size(px(self.font_size))
             .text_color(self.theme.text_secondary)
+            .whitespace_normal()
             .font_weight(FontWeight::BOLD)
             .child(content)
             .into_any_element()
@@ -531,6 +544,7 @@ impl MarkdownRenderer {
             .id(SharedString::from(format!("link_{}", url)))
             .text_size(px(self.font_size))
             .text_color(self.theme.accent)
+            .whitespace_normal()
             .cursor_pointer()
             .hover(|s| s.underline())
             .child(content)
@@ -616,11 +630,15 @@ impl MarkdownRenderer {
 
         div()
             .my_2()
-            .border_1()
-            .border_color(self.theme.border)
-            .rounded_md()
-            .overflow_hidden()
-            .children(row_elements)
+            .w_full()
+            .scrollable(ScrollbarAxis::Horizontal)
+            .child(
+                div()
+                    .border_1()
+                    .border_color(self.theme.border)
+                    .rounded_md()
+                    .children(row_elements)
+            )
             .into_any_element()
     }
 
@@ -628,6 +646,7 @@ impl MarkdownRenderer {
         div()
             .text_size(px(self.font_size))
             .text_color(self.theme.text_muted)
+            .whitespace_normal()
             .line_through()
             .child(content)
             .into_any_element()

@@ -17,6 +17,7 @@ pub struct ChatView {
     header: Entity<ChatHeader>,
     input: Entity<ChatInput>,
     expanded_search_indices: HashSet<usize>,
+    scroll_handle: ScrollHandle,
     // Edit state
     editing_message_index: Option<usize>,
     edit_input: Option<Entity<InputState>>,
@@ -31,6 +32,7 @@ impl ChatView {
             header,
             input,
             expanded_search_indices: HashSet::new(),
+            scroll_handle: ScrollHandle::default(),
             editing_message_index: None,
             edit_input: None,
         }
@@ -212,6 +214,7 @@ impl ChatView {
                                                     .text_size(px(font_size - 1.0))
                                                     .text_color(theme.accent)
                                                     .font_weight(FontWeight::MEDIUM)
+                                                    .whitespace_normal()
                                                     .child(result.title.clone())
                                             )
                                     )
@@ -233,6 +236,7 @@ impl ChatView {
                                             div()
                                                 .text_size(px(font_size - 2.0))
                                                 .text_color(theme.text_secondary)
+                                                .whitespace_normal()
                                                 .child(content)
                                         )
                                     })
@@ -246,6 +250,13 @@ impl ChatView {
 
 impl Render for ChatView {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        // Check if we need to scroll to bottom
+        let should_scroll = self.state.read(cx).scroll_to_bottom;
+        if should_scroll {
+            self.scroll_handle.scroll_to_bottom();
+            self.state.update(cx, |s, _| s.scroll_to_bottom = false);
+        }
+
         let state = self.state.read(cx);
 
         div()
@@ -319,9 +330,12 @@ impl ChatView {
                     }).collect();
 
                     div()
+                        .id("messages_scroll")
                         .flex()
                         .flex_col()
                         .flex_1()
+                        .pr_4()
+                        .track_scroll(&self.scroll_handle)
                         .scrollable(ScrollbarAxis::Vertical)
                         .children(message_elements)
                         // Streaming message
@@ -399,8 +413,10 @@ impl ChatView {
                     .child(
                         div()
                             .flex_1()
+                            .min_w(px(0.0))
                             .text_color(theme_primary)
                             .text_size(px(font_size))
+                            .whitespace_normal()
                             .child(content)
                     )
                     // Edit button

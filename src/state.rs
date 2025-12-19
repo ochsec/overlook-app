@@ -51,6 +51,7 @@ pub struct AppState {
     pub favorite_models: Vec<String>,
     pub api_key_masked: bool,
     pub confirm_delete_chat: bool,
+    pub scroll_to_bottom: bool,
 
     // Message input state
     pub message_input: String,
@@ -101,6 +102,7 @@ impl AppState {
             favorite_models: Vec::new(),
             api_key_masked: true,
             confirm_delete_chat: Storage::load_confirm_delete_chat().unwrap_or(true),
+            scroll_to_bottom: false,
 
             message_input: String::new(),
             selected_attachments: Vec::new(),

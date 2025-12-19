@@ -56,9 +56,11 @@ impl MessageBubble {
                         .child(
                             div()
                                 .flex_1()
+                                .min_w(px(0.0))
                                 .text_color(self.theme.text_muted)
                                 .text_size(px(font_size - 1.0))
                                 .italic()
+                                .whitespace_normal()
                                 .child(self.message.content.clone())
                         )
                 )
@@ -103,8 +105,10 @@ impl MessageBubble {
                         .child(
                             div()
                                 .flex_1()
+                                .min_w(px(0.0))
                                 .text_color(self.theme.text_primary)
                                 .text_size(px(font_size))
+                                .whitespace_normal()
                                 .child(self.message.content.clone())
                         )
                         .child(
@@ -217,8 +221,10 @@ pub fn render_streaming_message(content: &str, theme: &GpuiTheme, font_size: f32
         .child(
             div()
                 .flex()
+                .flex_wrap()
                 .text_color(theme.text_secondary)
                 .text_size(px(font_size))
+                .whitespace_normal()
                 .child(content.to_string())
                 .when(show_cursor, |this| {
                     this.child(

@@ -157,6 +157,7 @@ impl ChatInput {
 
             // Set sending state and clear attachments
             state.sending_message = true;
+            state.scroll_to_bottom = true;
             state.selected_attachments.clear();
             chat_id
         });
