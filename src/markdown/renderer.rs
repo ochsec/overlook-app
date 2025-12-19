@@ -1,6 +1,6 @@
 // Markdown Renderer - Converts markdown to GPUI elements
 use gpui::*;
-use gpui_component::{StyledExt, scroll::ScrollbarAxis};
+use gpui_component::StyledExt;
 use pulldown_cmark::{Parser, Event, Tag, TagEnd, CodeBlockKind, Options};
 use syntect::parsing::SyntaxSet;
 use syntect::highlighting::{ThemeSet, Style, Color as SyntectColor};
@@ -628,12 +628,17 @@ impl MarkdownRenderer {
             row_elements.push(row_div.into_any_element());
         }
 
+        // Calculate total table width
+        let total_width: f32 = col_widths.iter().sum();
+
         div()
+            .id("table_container")
             .my_2()
             .w_full()
-            .scrollable(ScrollbarAxis::Horizontal)
+            .overflow_scroll()
             .child(
                 div()
+                    .min_w(px(total_width + 20.0)) // Ensure table doesn't shrink
                     .border_1()
                     .border_color(self.theme.border)
                     .rounded_md()
