@@ -5,10 +5,11 @@ use gpui_component::input::{InputState, Input, InputEvent};
 use chrono::Utc;
 use std::time::Duration;
 use crate::api::{ApiClient, run_on_tokio_async, stream_chat_to_channel};
+use crate::attachments::AttachmentProcessor;
 use crate::state::AppState;
 use crate::storage::Storage;
 use crate::tools::SearchOrchestrator;
-use crate::types::{Chat, Message};
+use crate::types::{Attachment, Chat, Message};
 
 pub struct ChatInput {
     state: Entity<AppState>,
@@ -73,7 +74,7 @@ impl ChatInput {
         }
 
         // Extract values needed for async task
-        let (provider, model, api_key, chat_id, existing_messages) = {
+        let (provider, model, api_key, chat_id, existing_messages, attachment_paths) = {
             let state = state_model.read(cx);
             if state.current_model.is_empty() {
                 println!("No model selected");
@@ -90,15 +91,30 @@ impl ChatInput {
                 api_key,
                 state.current_chat_id.clone(),
                 messages,
+                state.selected_attachments.clone(),
             )
         };
+
+        // Process attachments from file paths
+        let attachments: Vec<Attachment> = attachment_paths
+            .iter()
+            .filter_map(|path| {
+                match AttachmentProcessor::process_file(path) {
+                    Ok(attachment) => Some(attachment),
+                    Err(e) => {
+                        eprintln!("Failed to process attachment {}: {}", path, e);
+                        None
+                    }
+                }
+            })
+            .collect();
 
         // Create user message
         let user_message = Message {
             role: "user".to_string(),
             content: message_text.clone(),
             timestamp: Utc::now(),
-            attachments: Vec::new(),
+            attachments,
             provider: Some(provider),
             model: Some(model.clone()),
             search_results: None,
@@ -139,8 +155,9 @@ impl ChatInput {
                 eprintln!("Failed to save chats: {}", e);
             }
 
-            // Set sending state
+            // Set sending state and clear attachments
             state.sending_message = true;
+            state.selected_attachments.clear();
             chat_id
         });
 
@@ -235,6 +252,52 @@ impl ChatInput {
         } else {
             Self::send_non_streaming_message(state_model, chat_id, model, provider, api_key, api_messages, cx);
         }
+    }
+
+    fn open_file_picker(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
+        let state_model = self.state.clone();
+
+        cx.spawn({
+            let state_model = state_model.clone();
+            async move |_this, cx| {
+                // Run file picker on tokio runtime
+                let file_paths = run_on_tokio_async(async move {
+                    let files = rfd::AsyncFileDialog::new()
+                        .add_filter("Images", &["png", "jpg", "jpeg", "gif", "webp", "bmp"])
+                        .add_filter("PDFs", &["pdf"])
+                        .add_filter("Text files", &["txt", "md", "json", "xml", "csv", "log"])
+                        .add_filter(
+                            "All supported",
+                            &[
+                                "png", "jpg", "jpeg", "gif", "webp", "bmp", "pdf", "txt", "md", "json",
+                                "xml", "csv", "log",
+                            ],
+                        )
+                        .pick_files()
+                        .await;
+
+                    // Convert to file paths, filtering to supported types
+                    files.map(|files| {
+                        files
+                            .into_iter()
+                            .map(|file| file.path().to_string_lossy().to_string())
+                            .filter(|path| {
+                                crate::attachments::AttachmentProcessor::is_supported_file(path)
+                            })
+                            .collect::<Vec<String>>()
+                    })
+                }).await;
+
+                // Update state with selected files
+                if let Some(paths) = file_paths {
+                    cx.update(|cx| {
+                        state_model.update(cx, |state, _| {
+                            state.selected_attachments.extend(paths);
+                        });
+                    }).ok();
+                }
+            }
+        }).detach();
     }
 
     fn send_streaming_message(
@@ -606,21 +669,19 @@ impl Render for ChatInput {
                                     .line_height(px(font_size + 4.0))
                             )
                     )
-                    .child({
+                    .child(
                         // Attach button (minimal)
-                        let state_model = state_model.clone();
                         div()
+                            .id("attach_btn")
                             .text_size(px(font_size - 2.0))
                             .text_color(theme_text_muted)
                             .cursor_pointer()
                             .hover(|s| s.text_color(theme_text_primary))
                             .child("[attach]")
-                            .on_mouse_down(MouseButton::Left, move |_, _, app| {
-                                state_model.update(app, |_state, _| {
-                                    println!("Attach clicked");
-                                });
-                            })
-                    })
+                            .on_click(cx.listener(|this, _, window, cx| {
+                                this.open_file_picker(window, cx);
+                            }))
+                    )
                     .child(
                         // Send button (minimal text style)
                         div()

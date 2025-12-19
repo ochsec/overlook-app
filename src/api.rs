@@ -1,4 +1,4 @@
-use crate::types::{Message, ModelDescriptor, ModelsResponse, ProviderKind};
+use crate::types::{AttachmentData, Message, ModelDescriptor, ModelsResponse, ProviderKind};
 use anyhow::{anyhow, Result};
 use eventsource_stream::Eventsource;
 use futures_util::{stream::BoxStream, StreamExt};
@@ -744,13 +744,8 @@ impl ApiClient {
             async move {
                 let endpoint = format!("{}/api/chat", base_url);
 
-                // Convert messages to Ollama format
-                let ollama_messages: Vec<Value> = messages.iter().map(|m| {
-                    json!({
-                        "role": m.role,
-                        "content": m.content
-                    })
-                }).collect();
+                // Convert messages to Ollama format (with attachment support)
+                let ollama_messages = ollama_style_messages(&messages);
 
                 let request_body = json!({
                     "model": model,
@@ -904,13 +899,8 @@ impl ApiClient {
                     async move {
                         let endpoint = format!("{}/api/chat", base_url);
 
-                        // Convert messages to Ollama format
-                        let ollama_messages: Vec<Value> = messages.iter().map(|m| {
-                            json!({
-                                "role": m.role,
-                                "content": m.content
-                            })
-                        }).collect();
+                        // Convert messages to Ollama format (with attachment support)
+                        let ollama_messages = ollama_style_messages(&messages);
 
                         let request_body = json!({
                             "model": model,
@@ -1221,10 +1211,94 @@ fn openai_style_messages(messages: &[Message]) -> Vec<Value> {
     messages
         .iter()
         .map(|message| {
-            json!({
-                "role": message.role,
-                "content": message.content,
-            })
+            // Check if message has attachments
+            if message.attachments.is_empty() {
+                json!({
+                    "role": message.role,
+                    "content": message.content,
+                })
+            } else {
+                // Build content array with text and attachments
+                let mut content_parts: Vec<Value> = Vec::new();
+
+                // Collect text attachments to append to main content
+                let text_attachments: Vec<String> = message.attachments
+                    .iter()
+                    .filter_map(|att| {
+                        match &att.data {
+                            AttachmentData::Text { content } => {
+                                Some(format!("\n\n--- {} ---\n{}", att.file_name, content))
+                            }
+                            _ => None,
+                        }
+                    })
+                    .collect();
+
+                // Add main text content (with text attachments appended)
+                let full_text = if text_attachments.is_empty() {
+                    message.content.clone()
+                } else {
+                    format!("{}{}", message.content, text_attachments.join(""))
+                };
+                content_parts.push(json!({
+                    "type": "text",
+                    "text": full_text,
+                }));
+
+                // Add image attachments
+                for attachment in &message.attachments {
+                    if let AttachmentData::Image { base64 } = &attachment.data {
+                        content_parts.push(json!({
+                            "type": "image_url",
+                            "image_url": {
+                                "url": format!("data:{};base64,{}", attachment.mime_type, base64)
+                            }
+                        }));
+                    }
+                }
+
+                json!({
+                    "role": message.role,
+                    "content": content_parts,
+                })
+            }
+        })
+        .collect()
+}
+
+/// Converts messages to Ollama format with attachment support
+fn ollama_style_messages(messages: &[Message]) -> Vec<Value> {
+    messages
+        .iter()
+        .map(|message| {
+            // Build content with text attachments appended
+            let mut content = message.content.clone();
+            let mut images: Vec<String> = Vec::new();
+
+            for attachment in &message.attachments {
+                match &attachment.data {
+                    AttachmentData::Text { content: text } => {
+                        content.push_str(&format!("\n\n--- {} ---\n{}", attachment.file_name, text));
+                    }
+                    AttachmentData::Image { base64 } => {
+                        // Ollama accepts base64 images in the images array
+                        images.push(base64.clone());
+                    }
+                }
+            }
+
+            if images.is_empty() {
+                json!({
+                    "role": message.role,
+                    "content": content
+                })
+            } else {
+                json!({
+                    "role": message.role,
+                    "content": content,
+                    "images": images
+                })
+            }
         })
         .collect()
 }
@@ -1234,18 +1308,27 @@ fn messages_to_prompt(messages: &[Message]) -> String {
     let mut prompt = String::new();
 
     for message in messages {
+        // Build content with text attachments appended
+        let mut content = message.content.clone();
+        for attachment in &message.attachments {
+            if let AttachmentData::Text { content: text } = &attachment.data {
+                content.push_str(&format!("\n\n--- {} ---\n{}", attachment.file_name, text));
+            }
+            // Note: Images are skipped for LM Studio text-only API
+        }
+
         match message.role.as_str() {
             "system" => {
-                prompt.push_str(&format!("System: {}\n\n", message.content));
+                prompt.push_str(&format!("System: {}\n\n", content));
             }
             "user" => {
-                prompt.push_str(&format!("User: {}\n\n", message.content));
+                prompt.push_str(&format!("User: {}\n\n", content));
             }
             "assistant" => {
-                prompt.push_str(&format!("Assistant: {}\n\n", message.content));
+                prompt.push_str(&format!("Assistant: {}\n\n", content));
             }
             _ => {
-                prompt.push_str(&format!("{}: {}\n\n", message.role, message.content));
+                prompt.push_str(&format!("{}: {}\n\n", message.role, content));
             }
         }
     }
@@ -1272,9 +1355,51 @@ fn anthropic_request_body(messages: &[Message], model: &str, stream: bool) -> Va
                 } else {
                     "user"
                 };
+
+                // Build content array with text and attachments
+                let mut content_parts: Vec<Value> = Vec::new();
+
+                // Collect text attachments to append to main content
+                let text_attachments: Vec<String> = message.attachments
+                    .iter()
+                    .filter_map(|att| {
+                        match &att.data {
+                            AttachmentData::Text { content } => {
+                                Some(format!("\n\n--- {} ---\n{}", att.file_name, content))
+                            }
+                            _ => None,
+                        }
+                    })
+                    .collect();
+
+                // Add main text content (with text attachments appended)
+                let full_text = if text_attachments.is_empty() {
+                    message.content.clone()
+                } else {
+                    format!("{}{}", message.content, text_attachments.join(""))
+                };
+                content_parts.push(json!({
+                    "type": "text",
+                    "text": full_text,
+                }));
+
+                // Add image attachments (Anthropic format)
+                for attachment in &message.attachments {
+                    if let AttachmentData::Image { base64 } = &attachment.data {
+                        content_parts.push(json!({
+                            "type": "image",
+                            "source": {
+                                "type": "base64",
+                                "media_type": attachment.mime_type,
+                                "data": base64
+                            }
+                        }));
+                    }
+                }
+
                 formatted_messages.push(json!({
                     "role": mapped_role,
-                    "content": [{"type": "text", "text": message.content}],
+                    "content": content_parts,
                 }));
             }
             _ => {
