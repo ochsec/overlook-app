@@ -8,3 +8,4 @@ pub mod message_bubble;
 pub mod model_badge;
 pub mod attachment_preview;
 pub mod model_picker_modal;
+pub mod license_modal;

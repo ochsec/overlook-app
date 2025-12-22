@@ -8,6 +8,7 @@ use crate::api::{ApiClient, run_on_tokio_async};
 use crate::state::{AppState, ViewMode};
 use crate::components::sidebar::Sidebar;
 use crate::components::model_picker_modal::ModelPickerModal;
+use crate::components::license_modal::LicenseModal;
 use crate::views::{chat_view::ChatView, settings_view::SettingsView, export_view::ExportView, organize_view::OrganizeView};
 
 pub struct OverlookApp {
@@ -21,7 +22,10 @@ pub struct OverlookApp {
     organize_view_initialized: bool,
     model_picker: Option<Entity<ModelPickerModal>>,
     model_picker_initialized: bool,
+    license_modal: Option<Entity<LicenseModal>>,
+    license_modal_initialized: bool,
     models_load_started: bool,
+    license_validation_started: bool,
 }
 
 impl OverlookApp {
@@ -40,7 +44,10 @@ impl OverlookApp {
             organize_view_initialized: false,
             model_picker: None,
             model_picker_initialized: false,
+            license_modal: None,
+            license_modal_initialized: false,
             models_load_started: false,
+            license_validation_started: false,
         }
     }
 
@@ -101,6 +108,79 @@ impl OverlookApp {
         }).detach();
     }
 
+    fn validate_license_on_startup(&mut self, cx: &mut Context<Self>) {
+        if self.license_validation_started {
+            return;
+        }
+
+        let needs_validation = {
+            let state = self.state.read(cx);
+            state.license_data.license_key.is_some() && state.license_data.validation_result.is_none()
+        };
+
+        if !needs_validation {
+            self.license_validation_started = true;
+            return;
+        }
+
+        self.license_validation_started = true;
+
+        let (license_key, hardware_id) = {
+            let state = self.state.read(cx);
+            (
+                state.license_data.license_key.clone().unwrap_or_default(),
+                state.license_data.hardware_id.clone().unwrap_or_else(crate::license::generate_fingerprint),
+            )
+        };
+
+        let state_model = self.state.clone();
+        cx.spawn({
+            let state_model = state_model.clone();
+            async move |_this, cx| {
+
+                let result = run_on_tokio_async({
+                    let license_key = license_key.clone();
+                    let hardware_id = hardware_id.clone();
+                    async move {
+                        let client = crate::license::LicenseClient::new();
+                        client.validate(&license_key, &hardware_id).await
+                    }
+                }).await;
+
+                cx.update(|cx| {
+                    state_model.update(cx, |state, _| {
+                        match result {
+                            Ok(validation_result) => {
+                                state.license_data.last_validation = Some(chrono::Utc::now());
+                                state.license_data.validation_result = Some(validation_result.clone());
+
+                                if validation_result.valid {
+                                    state.license_status = crate::license::LicenseStatus::Valid {
+                                        email: validation_result.email.unwrap_or_default(),
+                                    };
+                                    state.show_license_modal = false;
+                                } else {
+                                    state.license_status = crate::license::LicenseStatus::Invalid {
+                                        reason: validation_result.error.unwrap_or_else(|| "Invalid license".to_string()),
+                                    };
+                                }
+
+                                if let Err(e) = crate::license::save_license_data(&state.license_data) {
+                                    eprintln!("Failed to save license data: {}", e);
+                                }
+                            }
+                            Err(e) => {
+                                eprintln!("License validation failed: {}", e);
+                            }
+                        }
+                    });
+                }).ok();
+
+                Ok::<_, anyhow::Error>(())
+            }
+        }).detach();
+    }
+
     fn ensure_chat_view(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if !self.chat_view_initialized {
             let state = self.state.clone();
@@ -130,6 +210,14 @@ impl OverlookApp {
             let state = self.state.clone();
             self.model_picker = Some(cx.new(|cx| ModelPickerModal::new(state, window, cx)));
             self.model_picker_initialized = true;
+        }
+    }
+
+    fn ensure_license_modal(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if !self.license_modal_initialized {
+            let state = self.state.clone();
+            self.license_modal = Some(cx.new(|cx| LicenseModal::new(state, window, cx)));
+            self.license_modal_initialized = true;
         }
     }
 
@@ -271,9 +359,13 @@ impl Render for OverlookApp {
         self.ensure_settings_view(window, cx);
         self.ensure_organize_view(window, cx);
         self.ensure_model_picker(window, cx);
+        self.ensure_license_modal(window, cx);
 
         // Auto-load models on startup if API key is configured
         self.load_models_on_startup(cx);
+
+        // Validate license on startup if key present but not validated
+        self.validate_license_on_startup(cx);
 
         // Now read state and extract needed values
         let state = self.state.read(cx);
@@ -281,6 +373,7 @@ impl Render for OverlookApp {
         let theme_background = state.theme.background;
         let theme_text_primary = state.theme.text_primary;
         let show_model_picker = state.show_model_picker_modal;
+        let show_license_modal = state.show_license_modal;
 
         // Clone entities for use in element tree
         let sidebar = self.sidebar.clone();
@@ -288,6 +381,7 @@ impl Render for OverlookApp {
         let settings_view = self.settings_view.clone();
         let organize_view = self.organize_view.clone();
         let model_picker = self.model_picker.clone();
+        let license_modal = self.license_modal.clone();
 
         div()
             .relative()
@@ -320,6 +414,14 @@ impl Render for OverlookApp {
             .when(show_model_picker, |this| {
                 if let Some(picker) = model_picker {
                     this.child(picker)
+                } else {
+                    this
+                }
+            })
+            // License expired modal overlay (takes priority)
+            .when(show_license_modal, |this| {
+                if let Some(modal) = license_modal {
+                    this.child(modal)
                 } else {
                     this
                 }

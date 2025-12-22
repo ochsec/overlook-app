@@ -2,6 +2,7 @@
 // Replaces the monolithic OverlookApp struct with structured state
 
 use crate::gpui_theme::{GpuiTheme, ThemeType};
+use crate::license::{self, LicenseData, LicenseStatus};
 use crate::storage::Storage;
 use crate::types::{Chat, ChatMap, ModelDescriptor, Project, ProjectMap, ProviderKeys, ProviderKind};
 use gpui::*;
@@ -68,6 +69,12 @@ pub struct AppState {
     // Export state
     pub export_selected_chat_id: Option<String>,
     pub last_export_result: Option<Result<String, String>>,
+
+    // License state
+    pub license_data: LicenseData,
+    pub license_status: LicenseStatus,
+    pub show_license_modal: bool,
+    pub license_key_input: String,
 }
 
 impl AppState {
@@ -75,6 +82,11 @@ impl AppState {
         let theme_type = Storage::load_theme().unwrap_or_default();
         let theme = GpuiTheme::from_theme_type(&theme_type);
         let font_size = Storage::load_font_size().unwrap_or(14.0);
+
+        // Load and check license status
+        let mut license_data = license::load_license_data().unwrap_or_default();
+        let license_status = license::check_license_status(&mut license_data);
+        let show_license_modal = license_status.is_expired();
 
         Self {
             current_view: ViewMode::Chat,
@@ -116,6 +128,11 @@ impl AppState {
 
             export_selected_chat_id: None,
             last_export_result: None,
+
+            license_data,
+            license_status,
+            show_license_modal,
+            license_key_input: String::new(),
         }
     }
 

@@ -8,6 +8,7 @@ use gpui_component::slider::{SliderState, Slider, SliderEvent};
 use gpui_component::menu::{DropdownMenu, PopupMenuItem};
 use gpui_component::theme::{Theme, ThemeMode};
 use gpui_component::{StyledExt, scroll::ScrollbarAxis};
+use crate::license::LicenseStatus;
 use crate::state::AppState;
 use crate::types::ProviderKind;
 use crate::gpui_theme::ThemeType;
@@ -22,12 +23,14 @@ pub struct SettingsView {
     ollama_input: Entity<InputState>,
     // Slider state for font size
     font_slider: Entity<SliderState>,
+    // License key input
+    license_input: Entity<InputState>,
 }
 
 impl SettingsView {
     pub fn new(state: Entity<AppState>, window: &mut Window, cx: &mut Context<Self>) -> Self {
         // Extract values from state first to avoid borrow issues
-        let (openrouter_key, openai_key, anthropic_key, lmstudio_url, ollama_url, font_size) = {
+        let (openrouter_key, openai_key, anthropic_key, lmstudio_url, ollama_url, font_size, license_key) = {
             let app_state = state.read(cx);
             (
                 app_state.api_keys.openrouter.clone(),
@@ -36,6 +39,7 @@ impl SettingsView {
                 app_state.api_keys.lmstudio_url.clone(),
                 app_state.api_keys.ollama_url.clone(),
                 app_state.font_size,
+                app_state.license_data.license_key.clone().unwrap_or_default(),
             )
         };
 
@@ -78,6 +82,13 @@ impl SettingsView {
                 .step(1.0)
         });
 
+        // Create license input state
+        let license_input = cx.new(|cx| {
+            InputState::new(window, cx)
+                .placeholder("XXXX-XXXX-XXXX-XXXX")
+                .default_value(license_key)
+        });
+
         // Subscribe to slider changes
         let state_clone = state.clone();
         cx.subscribe(&font_slider, move |_this, _slider, event: &SliderEvent, cx| {
@@ -100,6 +111,7 @@ impl SettingsView {
             lmstudio_input,
             ollama_input,
             font_slider,
+            license_input,
         }
     }
 
@@ -175,6 +187,13 @@ impl Render for SettingsView {
         let streaming_enabled = state.streaming_enabled;
         let confirm_delete_chat = state.confirm_delete_chat;
         let font_size = state.font_size;
+        let license_status = state.license_status.clone();
+
+        // Calculate trial expiration date
+        let trial_expires = state.license_data.first_launch.map(|first| {
+            let expires = first + chrono::Duration::days(30);
+            expires.format("%Y-%m-%d %H:%M").to_string()
+        });
 
         div()
             .flex()
@@ -429,6 +448,104 @@ impl Render for SettingsView {
                                                         });
                                                     })
                                             })
+                                    )
+                            )
+                            // License Section
+                            .child(
+                                div()
+                                    .flex()
+                                    .flex_col()
+                                    .gap_4()
+                                    .p_4()
+                                    .rounded_lg()
+                                    .border_1()
+                                    .border_color(theme.border)
+                                    .child(
+                                        div()
+                                            .text_size(px(font_size + 4.0))
+                                            .font_weight(FontWeight::SEMIBOLD)
+                                            .text_color(theme.text_primary)
+                                            .child("License")
+                                    )
+                                    // License status display
+                                    .child(
+                                        div()
+                                            .flex()
+                                            .items_center()
+                                            .gap_2()
+                                            .text_size(px(font_size - 2.0))
+                                            .child(
+                                                div()
+                                                    .text_color(theme.text_secondary)
+                                                    .child("Status:")
+                                            )
+                                            .child(
+                                                div()
+                                                    .text_color(match &license_status {
+                                                        LicenseStatus::Valid { .. } => gpui::rgb(0x22c55e), // green
+                                                        LicenseStatus::Trial { .. } => gpui::rgb(0xeab308), // yellow
+                                                        _ => gpui::rgb(0xef4444), // red
+                                                    })
+                                                    .child(match &license_status {
+                                                        LicenseStatus::Valid { email } => format!("Licensed to {}", email),
+                                                        LicenseStatus::Trial { days_remaining } => format!("Trial - {} days remaining", days_remaining),
+                                                        LicenseStatus::TrialExpired => "Trial expired".to_string(),
+                                                        LicenseStatus::Invalid { reason } => format!("Invalid: {}", reason),
+                                                    })
+                                            )
+                                    )
+                                    // License key input and activate button
+                                    .child(
+                                        div()
+                                            .flex()
+                                            .flex_col()
+                                            .gap_2()
+                                            .child(
+                                                div()
+                                                    .text_size(px(font_size - 2.0))
+                                                    .text_color(theme.text_secondary)
+                                                    .child(match &trial_expires {
+                                                        Some(expires) => format!("License Key (trial expires: {})", expires),
+                                                        None => "License Key".to_string(),
+                                                    })
+                                            )
+                                            .child(
+                                                div()
+                                                    .flex()
+                                                    .items_center()
+                                                    .gap_2()
+                                                    .child(
+                                                        div()
+                                                            .flex_1()
+                                                            .child(Input::new(&self.license_input).cleanable(true))
+                                                    )
+                                                    .child({
+                                                        let state_model = state_model.clone();
+                                                        let license_input = self.license_input.clone();
+                                                        Button::new("activate_license")
+                                                            .label("Activate")
+                                                            .on_click(move |_, _, cx| {
+                                                                let key = license_input.read(cx).value().to_string();
+                                                                if !key.is_empty() {
+                                                                    state_model.update(cx, |state, _| {
+                                                                        state.license_data.license_key = Some(key);
+                                                                        state.license_data.validation_result = None;
+                                                                        state.license_key_input = String::new();
+                                                                        if let Err(e) = crate::license::save_license_data(&state.license_data) {
+                                                                            eprintln!("Failed to save license: {}", e);
+                                                                        }
+                                                                    });
+                                                                    println!("License key saved. Restart to validate.");
+                                                                }
+                                                            })
+                                                    })
+                                            )
+                                    )
+                                    .child(
+                                        div()
+                                            .text_size(px(font_size - 4.0))
+                                            .text_color(theme.text_muted)
+                                            .child("Enter your license key and click Activate. Restart to validate.")
                                     )
                             )
                             // Save Button

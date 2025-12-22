@@ -18,6 +18,7 @@ mod components;
 mod views;
 mod state;
 mod gpui_app;
+mod license;
 
 use gpui::*;
 use gpui_component::*;
