@@ -3,6 +3,7 @@ use axum::{
     extract::State,
     http::{HeaderMap, StatusCode},
 };
+use uuid::Uuid;
 
 use crate::{
     db,
@@ -10,6 +11,18 @@ use crate::{
     paddle::verify_paddle_signature,
     AppState,
 };
+
+fn generate_license_key() -> String {
+    let uuid = Uuid::new_v4();
+    let hex = uuid.simple().to_string().to_uppercase();
+    format!(
+        "overlook-key-{}-{}-{}-{}",
+        &hex[0..4],
+        &hex[4..8],
+        &hex[8..12],
+        &hex[12..16]
+    )
+}
 
 pub async fn paddle_webhook_handler(
     State(state): State<AppState>,
@@ -53,14 +66,7 @@ pub async fn paddle_webhook_handler(
     tracing::info!(event_type = ?webhook.event_type, "Received Paddle webhook");
 
     match webhook.event_type {
-        PaddleEventType::TransactionCompleted | PaddleEventType::SubscriptionCreated => {
-            // Extract license key from custom_data
-            let license_key = webhook
-                .data
-                .custom_data
-                .as_ref()
-                .and_then(|c| c.license_key.clone());
-
+        PaddleEventType::TransactionCompleted => {
             let email = webhook
                 .data
                 .customer
@@ -68,17 +74,11 @@ pub async fn paddle_webhook_handler(
                 .and_then(|c| c.email.clone())
                 .unwrap_or_else(|| "unknown@example.com".to_string());
 
-            let license_key = match license_key {
-                Some(key) => key,
-                None => {
-                    tracing::warn!("No license_key in custom_data");
-                    return StatusCode::BAD_REQUEST;
-                }
-            };
+            let license_key = generate_license_key();
+            tracing::info!(license_key = %license_key, "Generated new license key");
 
-            // Create license
             match db::create_license(
-                &pool,
+                pool,
                 &license_key,
                 &email,
                 Some(&webhook.data.id),
@@ -95,9 +95,8 @@ pub async fn paddle_webhook_handler(
                     StatusCode::OK
                 }
                 Err(e) => {
-                    // Could be duplicate key - that's ok for idempotency
-                    if e.to_string().contains("UNIQUE constraint failed") {
-                        tracing::info!(license_key = %license_key, "License already exists");
+                    if e.to_string().contains("duplicate key") {
+                        tracing::info!(transaction_id = %webhook.data.id, "License already exists for transaction");
                         StatusCode::OK
                     } else {
                         tracing::error!("Failed to create license: {}", e);
@@ -106,24 +105,39 @@ pub async fn paddle_webhook_handler(
                 }
             }
         }
-        PaddleEventType::SubscriptionCanceled => {
-            // Revoke the license
-            match db::revoke_license(&pool, &webhook.data.id).await {
-                Ok(_) => {
-                    tracing::info!(
-                        subscription_id = %webhook.data.id,
-                        "Revoked license"
-                    );
-                    StatusCode::OK
+        PaddleEventType::AdjustmentCreated => {
+            let action = webhook.data.action.as_deref().unwrap_or("");
+            let transaction_id = match &webhook.data.transaction_id {
+                Some(id) => id,
+                None => {
+                    tracing::warn!("Adjustment missing transaction_id");
+                    return StatusCode::BAD_REQUEST;
                 }
-                Err(e) => {
-                    tracing::error!("Failed to revoke license: {}", e);
-                    StatusCode::INTERNAL_SERVER_ERROR
+            };
+
+            // Revoke license on refund or chargeback
+            if action == "refund" || action == "chargeback" {
+                match db::revoke_license_by_transaction(pool, transaction_id).await {
+                    Ok(count) => {
+                        tracing::info!(
+                            transaction_id = %transaction_id,
+                            action = %action,
+                            revoked_count = count,
+                            "Revoked license due to {}", action
+                        );
+                        StatusCode::OK
+                    }
+                    Err(e) => {
+                        tracing::error!("Failed to revoke license: {}", e);
+                        StatusCode::INTERNAL_SERVER_ERROR
+                    }
                 }
+            } else {
+                tracing::debug!(action = %action, "Ignoring non-refund adjustment");
+                StatusCode::OK
             }
         }
         PaddleEventType::Other => {
-            // Ignore other events
             tracing::debug!("Ignoring unhandled event type");
             StatusCode::OK
         }

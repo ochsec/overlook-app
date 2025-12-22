@@ -1,11 +1,11 @@
 CREATE TABLE IF NOT EXISTS licenses (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    id SERIAL PRIMARY KEY,
     license_key TEXT UNIQUE NOT NULL,
     email TEXT NOT NULL,
     hardware_id TEXT,
     created_at TEXT NOT NULL,
     activated_at TEXT,
-    revoked INTEGER DEFAULT 0,
+    revoked BOOLEAN DEFAULT FALSE,
     revoked_at TEXT,
     paddle_subscription_id TEXT,
     paddle_checkout_id TEXT

@@ -25,18 +25,23 @@ pub struct ValidateResponse {
     pub valid: bool,
     pub email: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub expires_at: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub days_remaining: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
 }
 
 impl ValidateResponse {
-    pub fn success(email: String) -> Self {
+    pub fn success(email: String, expires_at: String, days_remaining: i64) -> Self {
         Self {
             valid: true,
             email: Some(email),
+            expires_at: Some(expires_at),
+            days_remaining: Some(days_remaining),
             error: None,
         }
     }
-
 }
 
 #[derive(Debug, Serialize)]
@@ -47,11 +52,11 @@ pub struct HealthResponse {
 
 /// Paddle webhook event types we care about
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "snake_case")]
 pub enum PaddleEventType {
+    #[serde(rename = "transaction.completed")]
     TransactionCompleted,
-    SubscriptionCreated,
-    SubscriptionCanceled,
+    #[serde(rename = "adjustment.created")]
+    AdjustmentCreated,
     #[serde(other)]
     Other,
 }
@@ -67,14 +72,12 @@ pub struct PaddleWebhook {
 pub struct PaddleEventData {
     pub id: String,
     #[serde(default)]
-    pub custom_data: Option<PaddleCustomData>,
-    #[serde(default)]
     pub customer: Option<PaddleCustomer>,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct PaddleCustomData {
-    pub license_key: Option<String>,
+    /// For adjustment events
+    #[serde(default)]
+    pub action: Option<String>,
+    #[serde(default)]
+    pub transaction_id: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]

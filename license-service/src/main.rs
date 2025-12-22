@@ -9,7 +9,7 @@ use axum::{
     routing::{get, post},
     Router,
 };
-use sqlx::SqlitePool;
+use sqlx::PgPool;
 use tower_http::{
     cors::{Any, CorsLayer},
     trace::TraceLayer,
@@ -20,7 +20,7 @@ use crate::config::Config;
 
 #[derive(Clone)]
 pub struct AppState {
-    pub pool: SqlitePool,
+    pub pool: PgPool,
     pub config: Config,
 }
 
