@@ -1,106 +1,180 @@
-# Per-User API Key Rate Limiting - Implementation Plan
+# SearXNG Rate Limiting - Implementation Plan
 
 ## Overview
 
-This document outlines the architecture and implementation for assigning unique SearXNG API keys to each licensed user, enabling per-user rate limiting.
+This document outlines the strategy for:
+1. Rate limiting SearXNG requests to prevent abuse (nginx IP-based limiting)
+2. Authenticating requests with a shared API key (fetched from license service)
 
 ---
 
 ## Architecture
 
 ```
-┌─────────────────┐      ┌──────────────────┐      ┌─────────────────┐
-│  Overlook App   │      │  License Service │      │   Redis Cloud   │
-│                 │      │                  │      │                 │
-│  - Validates    │─────▶│  - Creates keys  │─────▶│                 │
-│    license      │      │  - Stores keys   │      │  - API keys     │
-│  - Gets API key │◀─────│    in Redis      │      │  - Rate limits  │
-│  - Searches     │      │                  │      │                 │
-└────────┬────────┘      └──────────────────┘      └────────┬────────┘
-         │                                                   │
-         │                                                   │
-         │               ┌──────────────────┐                │
-         │               │  SearXNG Server  │                │
-         └──────────────▶│                  │◀───────────────┘
-                         │  - Validates key │
-                         │  - Rate limits   │
-                         │  - Returns results│
-                         └──────────────────┘
+┌─────────────────┐      ┌──────────────────┐      ┌──────────────────────────────────┐
+│  Overlook App   │      │  License Service │      │        SearXNG Server            │
+│                 │      │                  │      │                                  │
+│  1. Validate    │─────▶│  Returns API key │      │                                  │
+│     license     │◀─────│                  │      │                                  │
+│                 │      └──────────────────┘      │                                  │
+│  2. Search      │──────────────────────────────▶│  nginx (validates key, rate      │
+│     (with key)  │                               │  limits by IP)                   │
+│                 │◀──────────────────────────────│         ↓                        │
+│                 │                               │  SearXNG (returns results)       │
+└─────────────────┘                               └──────────────────────────────────┘
 ```
 
 **Flow:**
-1. User activates license via License Service
-2. License Service generates API key and stores in Redis Cloud
-3. License validation response includes the API key
-4. App uses API key for SearXNG requests
-5. SearXNG validates key and enforces rate limits via Redis
+1. App launches → validates license with license service
+2. License service returns validation response including SearXNG API key
+3. App stores API key in memory
+4. App sends search request with API key in header
+5. Nginx validates API key → if invalid, return 401
+6. Nginx checks request rate for client IP → if over limit, return 429
+7. If valid and under limit → forward to SearXNG
 
 ---
 
-## Redis Data Model
+## How It Works
 
-### Key Validation
-```
-Key:    apikey:{api_key}
-Value:  {"license_id": "lic_xxx", "email": "user@example.com"}
-TTL:    None (or match license expiry)
-```
-
-### Rate Limiting
-```
-Key:    ratelimit:{api_key}:{window}
-Value:  {count}  (integer)
-TTL:    Auto-expire after window (e.g., 3600 for hourly)
-
-Example:
-  ratelimit:sk_abc123:2025-12-21-14 → 42
-```
-
-### Request Flow
-```
-1. Check EXISTS apikey:{key}
-   → Not found? Reject (401 Unauthorized)
-
-2. INCR ratelimit:{key}:{current_hour}
-   → First request in window? EXPIRE key 3600
-
-3. If count > limit (e.g., 100/hour)
-   → Reject (429 Too Many Requests)
-
-4. Allow request → proxy to SearXNG
-```
+Nginx's `limit_req` module uses a "leaky bucket" algorithm:
+- Requests are allowed at a steady rate (e.g., 10 requests/second)
+- A `burst` buffer allows short spikes above the rate
+- Excess requests beyond the burst are rejected with 429
+- Counters are stored in nginx shared memory (fast, no external database)
+- Counters reset on nginx restart (acceptable for rate limiting)
 
 ---
 
-## Components Requiring Changes
+## Nginx Configuration
 
-### 1. License Service
+Add to your nginx configuration:
 
-**Files to modify:**
-- `license-service/src/models.rs` - Add `searxng_api_key` field
-- `license-service/src/handlers/validate.rs` - Return API key in response
-- `license-service/src/paddle.rs` - Generate API key on license creation
-- `license-service/src/db.rs` - Store/retrieve API key
+```nginx
+# In the http block (usually /etc/nginx/nginx.conf)
+# Allocates 10MB shared memory zone for tracking IPs
+# 10MB can track ~160,000 unique IPs
+limit_req_zone $binary_remote_addr zone=search_limit:10m rate=10r/s;
 
-**New dependencies:**
-```toml
-# Cargo.toml
-redis = { version = "0.27", features = ["tokio-comp", "aio"] }
-```
+# In your server block
+server {
+    listen 443 ssl;
+    server_name search.yourdomain.com;
 
-**Database migration:**
-```sql
-ALTER TABLE licenses ADD COLUMN searxng_api_key VARCHAR(64) UNIQUE;
-```
+    # SSL config...
 
-**API key generation:**
-```rust
-fn generate_api_key() -> String {
-    format!("sk_{}", uuid::Uuid::new_v4().to_string().replace("-", ""))
+    location /search {
+        # Validate API key
+        if ($http_x_api_token != "your-secret-token-here") {
+            return 401;
+        }
+
+        # Apply rate limiting
+        # burst=20: allow up to 20 requests to queue during spikes
+        # nodelay: don't delay burst requests, process immediately
+        limit_req zone=search_limit burst=20 nodelay;
+
+        # Return 429 instead of default 503 when rate limited
+        limit_req_status 429;
+
+        # Proxy to SearXNG
+        proxy_pass http://localhost:8080;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    }
 }
 ```
 
-**Validation response update:**
+To rotate the API key, update both the nginx config and the license service, then reload nginx.
+
+---
+
+## Rate Limit Configuration Options
+
+### Conservative (recommended to start)
+```nginx
+limit_req_zone $binary_remote_addr zone=search_limit:10m rate=10r/s;
+limit_req zone=search_limit burst=20 nodelay;
+```
+- 10 requests/second sustained
+- Burst of 20 additional requests allowed
+- Suitable for normal usage patterns
+
+### Stricter
+```nginx
+limit_req_zone $binary_remote_addr zone=search_limit:10m rate=1r/s;
+limit_req zone=search_limit burst=5 nodelay;
+```
+- 1 request/second sustained
+- Burst of 5 additional requests allowed
+- For tighter control
+
+### More Permissive
+```nginx
+limit_req_zone $binary_remote_addr zone=search_limit:10m rate=30r/s;
+limit_req zone=search_limit burst=50 nodelay;
+```
+- 30 requests/second sustained
+- Burst of 50 additional requests allowed
+- For power users or if you see legitimate traffic being blocked
+
+---
+
+## Implementation Steps
+
+### Phase 1: License Service
+1. Add `searxng_api_key` field to `ValidateResponse`
+2. Configure the API key via environment variable
+3. Return API key in validation response
+
+### Phase 2: SearXNG Server
+1. SSH into SearXNG server
+2. Edit nginx configuration to add `limit_req_zone` in http block
+3. Add API key validation and `limit_req` directive to the search location block
+4. Test configuration: `nginx -t`
+5. Reload nginx: `systemctl reload nginx`
+6. Test with curl (should get 401 without key, 200 with key)
+
+### Phase 3: Overlook App
+1. Update app to read API key from validation response
+2. Store API key in memory (or persist locally for offline use)
+3. Include API key in search request headers
+4. Handle 401 responses (prompt license re-validation)
+
+---
+
+## Testing
+
+Test that rate limiting works:
+
+```bash
+# Send 30 rapid requests - should see some 429 responses
+for i in {1..30}; do
+    curl -s -o /dev/null -w "%{http_code}\n" "https://search.yourdomain.com/search?q=test&format=json"
+done
+```
+
+---
+
+## Monitoring
+
+Check for rate-limited requests in nginx logs:
+
+```bash
+# Count 429 responses
+grep " 429 " /var/log/nginx/access.log | wc -l
+
+# See recent rate-limited requests
+grep " 429 " /var/log/nginx/access.log | tail -20
+```
+
+---
+
+## License Service Changes
+
+**File:** `license-service/src/models.rs`
+
 ```rust
 pub struct ValidateResponse {
     pub valid: bool,
@@ -111,313 +185,98 @@ pub struct ValidateResponse {
 }
 ```
 
-**Redis operations (on license creation):**
+**File:** `license-service/src/handlers/validate.rs`
+
 ```rust
-async fn store_api_key(redis: &Redis, api_key: &str, license_id: &str, email: &str) {
-    let value = json!({
-        "license_id": license_id,
-        "email": email
-    });
-    redis.set(format!("apikey:{}", api_key), value.to_string()).await?;
+// Read from environment variable
+let searxng_api_key = std::env::var("SEARXNG_API_KEY").ok();
+
+// Include in response
+ValidateResponse {
+    valid: true,
+    email: license.email,
+    expires_at: license.expires_at,
+    days_remaining: Some(days),
+    searxng_api_key,
 }
 ```
 
-**Redis operations (on license revocation):**
-```rust
-async fn revoke_api_key(redis: &Redis, api_key: &str) {
-    redis.del(format!("apikey:{}", api_key)).await?;
-}
-```
-
----
-
-### 2. SearXNG Server (Rate Limiting Proxy)
-
-**Option A: Nginx + Lua (Recommended)**
-
-Requires: `nginx-extras` or OpenResty for Lua support.
-
-**Nginx configuration:**
-```nginx
-# /etc/nginx/sites-available/searxng
-
-lua_shared_dict rate_limit 10m;
-
-upstream searxng {
-    server 127.0.0.1:8080;
-}
-
-server {
-    listen 443 ssl;
-    server_name search.yourdomain.com;
-
-    # SSL config...
-
-    location /search {
-        access_by_lua_block {
-            local redis = require "resty.redis"
-            local red = redis:new()
-            red:set_timeout(1000)
-
-            -- Connect to Redis Cloud
-            local ok, err = red:connect("YOUR_REDIS_CLOUD_HOST", YOUR_REDIS_CLOUD_PORT)
-            if not ok then
-                ngx.status = 500
-                ngx.say("Redis connection failed")
-                return ngx.exit(500)
-            end
-
-            -- Authenticate with Redis Cloud
-            red:auth("YOUR_REDIS_CLOUD_PASSWORD")
-
-            -- Get API key from header
-            local api_key = ngx.req.get_headers()["X-API-Token"]
-            if not api_key then
-                ngx.status = 401
-                ngx.say("Missing API key")
-                return ngx.exit(401)
-            end
-
-            -- Validate API key exists
-            local exists = red:exists("apikey:" .. api_key)
-            if exists == 0 then
-                ngx.status = 401
-                ngx.say("Invalid API key")
-                return ngx.exit(401)
-            end
-
-            -- Rate limiting
-            local hour = os.date("%Y-%m-%d-%H")
-            local rate_key = "ratelimit:" .. api_key .. ":" .. hour
-            local count = red:incr(rate_key)
-
-            -- Set TTL on first request of window
-            if count == 1 then
-                red:expire(rate_key, 3600)
-            end
-
-            -- Check limit (100 requests/hour)
-            if count > 100 then
-                ngx.status = 429
-                ngx.header["Retry-After"] = "3600"
-                ngx.say("Rate limit exceeded")
-                return ngx.exit(429)
-            end
-
-            red:set_keepalive(10000, 100)
-        }
-
-        proxy_pass http://searxng;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-    }
-}
-```
-
-**Option B: Separate Rust Proxy Service**
-
-If Lua is too complex, create a small Rust service that sits in front of SearXNG:
-
-```rust
-// rate-limit-proxy/src/main.rs
-async fn proxy_search(
-    headers: HeaderMap,
-    Query(params): Query<SearchParams>,
-    State(state): State<AppState>,
-) -> Result<Response, StatusCode> {
-    let api_key = headers
-        .get("X-API-Token")
-        .and_then(|v| v.to_str().ok())
-        .ok_or(StatusCode::UNAUTHORIZED)?;
-
-    // Validate key
-    let exists: bool = state.redis
-        .exists(format!("apikey:{}", api_key))
-        .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-
-    if !exists {
-        return Err(StatusCode::UNAUTHORIZED);
-    }
-
-    // Rate limit
-    let hour = chrono::Utc::now().format("%Y-%m-%d-%H");
-    let rate_key = format!("ratelimit:{}:{}", api_key, hour);
-    let count: i64 = state.redis.incr(&rate_key, 1).await?;
-
-    if count == 1 {
-        state.redis.expire(&rate_key, 3600).await?;
-    }
-
-    if count > 100 {
-        return Err(StatusCode::TOO_MANY_REQUESTS);
-    }
-
-    // Forward to SearXNG
-    let response = state.http_client
-        .get(&format!("{}/search", state.searxng_url))
-        .query(&params)
-        .send()
-        .await?;
-
-    Ok(response.into())
-}
+**Environment variable:**
+```bash
+SEARXNG_API_KEY=your-secret-token-here
 ```
 
 ---
 
-### 3. Overlook App (Client)
+## Overlook App Changes
 
-**Files to modify:**
-- `src/license/mod.rs` - Store returned API key
-- `src/license/storage.rs` - Persist API key locally
-- `src/tools.rs` - Use per-user API key instead of env variable
+**File:** `src/tools.rs`
 
-**License data update:**
 ```rust
-// src/license/storage.rs
-pub struct LicenseData {
-    pub license_key: Option<String>,
-    pub first_launch: DateTime<Utc>,
-    pub last_validation: Option<DateTime<Utc>>,
-    pub cached_response: Option<ValidateResponse>,
-    pub searxng_api_key: Option<String>,  // NEW
-}
-```
-
-**Update after validation:**
-```rust
-// src/license/mod.rs
-pub async fn validate_license_online(license_key: &str) -> Result<ValidateResponse> {
-    let response = client.validate(license_key, &hardware_id).await?;
-
-    // Store the API key locally
-    if let Some(api_key) = &response.searxng_api_key {
-        let mut data = load_license_data()?;
-        data.searxng_api_key = Some(api_key.clone());
-        save_license_data(&data)?;
-    }
-
-    Ok(response)
-}
-```
-
-**Use in search requests:**
-```rust
-// src/tools.rs
 impl WebSearchTool {
-    pub fn new() -> Self {
-        // Prefer per-user API key, fall back to env for development
-        let api_token = load_license_data()
-            .ok()
-            .and_then(|d| d.searxng_api_key)
-            .or_else(|| std::env::var("SEARXNG_API_TOKEN").ok());
-
+    pub fn new(searxng_api_key: Option<String>) -> Self {
         Self {
             client: reqwest::Client::new(),
             base_url: std::env::var("SEARXNG_URL").unwrap_or_default(),
-            api_token,
+            api_token: searxng_api_key,
+        }
+    }
+
+    pub async fn search(&self, query: &str) -> Result<Vec<SearchResult>, SearchError> {
+        let mut request = self.client
+            .get(format!("{}/search", self.base_url))
+            .query(&[("q", query), ("format", "json")]);
+
+        if let Some(token) = &self.api_token {
+            request = request.header("X-API-Token", token);
+        }
+
+        let response = request.send().await?;
+
+        match response.status() {
+            StatusCode::OK => { /* parse results */ }
+            StatusCode::UNAUTHORIZED => Err(SearchError::Unauthorized),
+            StatusCode::TOO_MANY_REQUESTS => Err(SearchError::RateLimited),
+            _ => Err(SearchError::ServerError),
         }
     }
 }
 ```
 
----
-
-## Implementation Steps
-
-### Phase 1: License Service Updates
-1. Add `searxng_api_key` column to database
-2. Add Redis client dependency
-3. Generate API key in Paddle webhook handler
-4. Store API key in both PostgreSQL and Redis
-5. Return API key in validation response
-6. Add revocation logic to remove key from Redis
-
-### Phase 2: SearXNG Rate Limiting
-1. Install OpenResty or nginx-extras on SearXNG server
-2. Configure Lua script for Redis-based rate limiting
-3. Set up connection to Redis Cloud
-4. Test rate limiting behavior
-5. Configure appropriate limits (e.g., 100 requests/hour)
-
-### Phase 3: Overlook App Updates
-1. Update `LicenseData` struct to include API key
-2. Store API key after successful validation
-3. Update `WebSearchTool` to use per-user API key
-4. Handle 401/429 responses gracefully in UI
-5. Test end-to-end flow
+Pass the API key from the license validation response when initializing the search tool.
 
 ---
 
-## Redis Cloud Setup
+## Key Rotation
 
-1. Create account at https://redis.io/cloud
-2. Create new free database (free tier: 30MB storage, no command limits)
-3. Note connection details from the dashboard:
-   - Host: `redis-xxxxx.c1.us-east-1-1.ec2.redns.redis-cloud.com`
-   - Port: `xxxxx`
-   - Password: `your-password`
+To rotate the API key:
 
-**Environment variables for License Service:**
-```bash
-REDIS_CLOUD_URL=redis://default:your-password@redis-xxxxx.c1.us-east-1-1.ec2.redns.redis-cloud.com:xxxxx
-```
+1. Generate a new key
+2. Update `SEARXNG_API_KEY` environment variable in license service
+3. Restart license service
+4. Update nginx config with new key
+5. Reload nginx: `systemctl reload nginx`
 
-**Environment variables for SearXNG server (nginx):**
-```bash
-# Or configure directly in Lua script
-REDIS_HOST=redis-xxxxx.c1.us-east-1-1.ec2.redns.redis-cloud.com
-REDIS_PORT=xxxxx
-REDIS_PASSWORD=your-password
-```
+Apps will get the new key on their next license validation (app launch).
 
 ---
 
-## Rate Limit Configuration
+## Benefits of This Approach
 
-| Tier | Requests/Hour | Requests/Day |
-|------|---------------|--------------|
-| Free Trial | 20 | 100 |
-| Licensed | 100 | 1000 |
-
-Store tier info in Redis value:
-```json
-{
-  "license_id": "lic_xxx",
-  "email": "user@example.com",
-  "tier": "licensed",
-  "hourly_limit": 100
-}
-```
+- **No external dependencies** - No Redis, no external cache service
+- **Minimal code changes** - Small additions to license service and app
+- **Fast** - Rate limiting uses nginx shared memory, no network calls
+- **Resilient** - Counters rebuild automatically after restart
+- **Rotatable** - API key can be changed without app updates
+- **Simple** - Easy to understand and maintain
+- **Battle-tested** - nginx rate limiting is widely used in production
 
 ---
 
-## Error Handling
+## Limitations
 
-### 401 Unauthorized
-- Invalid or missing API key
-- App should prompt user to re-validate license
-
-### 429 Too Many Requests
-- Rate limit exceeded
-- App should show user-friendly message with retry time
-- Include `Retry-After` header in response
-
-### 500 Internal Server Error
-- Redis connection failed
-- Fail open (allow request) or fail closed based on preference
-
----
-
-## Testing Checklist
-
-- [ ] License creation generates unique API key
-- [ ] API key stored in PostgreSQL and Redis
-- [ ] Validation response includes API key
-- [ ] App stores and uses API key for searches
-- [ ] SearXNG validates API key against Redis
-- [ ] Rate limiting increments counter correctly
-- [ ] Rate limit exceeded returns 429
-- [ ] License revocation removes key from Redis
-- [ ] App handles 401/429 errors gracefully
+- Rate limiting is per-IP, not per-user (acceptable since each desktop app has a unique IP)
+- Users behind the same NAT/VPN share a rate limit (rare edge case)
+- Single shared API key - if leaked, must rotate (but rotation is easy)
+- No differentiation between trial and licensed users (could add later if needed)
+- Requires app restart to get new API key after rotation
