@@ -142,11 +142,13 @@ impl MessageBubble {
             div()
                 .id(("msg", message_id))
                 .group("message")
+                .w_full()
                 .flex()
                 .flex_col()
                 .px_4()
                 .py_1()
                 .gap_0()
+                .overflow_hidden()
                 // Model info line with copy button (if available)
                 .when(self.message.provider.is_some() && self.message.model.is_some(), |this| {
                     let provider_name = self.message.provider

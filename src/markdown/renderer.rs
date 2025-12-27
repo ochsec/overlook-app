@@ -489,6 +489,7 @@ impl MarkdownRenderer {
             };
 
             div()
+                .w_full()
                 .flex()
                 .gap_2()
                 .child(
@@ -500,6 +501,7 @@ impl MarkdownRenderer {
                 .child(
                     div()
                         .flex_1()
+                        .min_w(px(0.0))
                         .text_size(px(self.font_size))
                         .text_color(self.theme.text_secondary)
                         .whitespace_normal()
@@ -509,11 +511,13 @@ impl MarkdownRenderer {
         }).collect();
 
         div()
+            .w_full()
             .flex()
             .flex_col()
             .pl_2()
             .pr_4()
             .gap_1()
+            .overflow_hidden()
             .children(elements)
             .into_any_element()
     }
