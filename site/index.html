@@ -7,11 +7,14 @@
     <link rel="stylesheet" href="style.css">
     <script src="https://cdn.paddle.com/paddle/v2/paddle.js"></script>
     <script>
-        Paddle.Initialize({ token: 'YOUR_CLIENT_SIDE_TOKEN' }); // TODO: Replace with actual token
+        Paddle.Initialize({ 
+            token: 'test_ae88f443c1a041bf4f47c0b1282',
+            environment: 'sandbox'
+        });
 
         function openCheckout() {
             Paddle.Checkout.open({
-                items: [{ priceId: 'pri_XXXXX' }] // TODO: Replace with actual price ID
+                items: [{ priceId: 'pro_01kcsae5nc1e3drxhkntp36yjr' }]
             });
         }
 
@@ -121,7 +124,7 @@
     <header>
         <nav>
             <div class="logo">
-                <img src="../assets/overlook.png" alt="Overlook" class="logo-img">
+                <img src="/assets/overlook.png" alt="Overlook" class="logo-img">
                 <span>Overlook</span>
             </div>
             <a href="#purchase" class="btn btn-primary">Buy Now - $29/year</a>
@@ -130,7 +133,7 @@
 
     <main>
         <section class="hero">
-            <img src="../assets/overlook.png" alt="Overlook" class="hero-image">
+            <img src="/assets/overlook.png" alt="Overlook" class="hero-image">
             <h1>Your AI conversations,<br>your computer.</h1>
             <p class="subtitle">A native desktop client for chatting with LLMs. No browser tabs, no servers to run. Just a fast, private app that works.</p>
             <a href="#purchase" class="btn btn-primary btn-large">Get Overlook - $29/year</a>
@@ -204,7 +207,7 @@
 
             <!-- All Downloads -->
             <div class="all-downloads">
-                <p class="downloads-help">Not seeing your OS? <a href="downloads.html">View all available downloads</a></p>
+                <p class="downloads-help">Not seeing your OS? <a href="/downloads.html">View all available downloads</a></p>
             </div>
         </section>
 
