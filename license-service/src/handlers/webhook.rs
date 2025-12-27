@@ -7,6 +7,7 @@ use uuid::Uuid;
 
 use crate::{
     db,
+    email,
     models::{PaddleEventType, PaddleWebhook},
     paddle::verify_paddle_signature,
     AppState,
@@ -92,6 +93,26 @@ pub async fn paddle_webhook_handler(
                         email = %email,
                         "Created new license"
                     );
+
+                    // Send license key email to customer
+                    if !config.resend_api_key.is_empty() {
+                        if let Err(e) = email::send_license_email(
+                            &config.resend_api_key,
+                            &config.email_from,
+                            &email,
+                            &license_key,
+                        )
+                        .await
+                        {
+                            tracing::error!("Failed to send license email: {}", e);
+                            // Don't fail the webhook - license was created successfully
+                        } else {
+                            tracing::info!(email = %email, "License email sent successfully");
+                        }
+                    } else {
+                        tracing::warn!("RESEND_API_KEY not configured, skipping email");
+                    }
+
                     StatusCode::OK
                 }
                 Err(e) => {

@@ -76,9 +76,43 @@ Content-Type: application/json
 ```
 
 Supported events:
-- `transaction.completed` - Creates new license
-- `subscription.created` - Creates new license
+- `transaction.completed` - Creates new license and sends email
+- `subscription.created` - Creates new license and sends email
 - `subscription.canceled` - Revokes license
+
+### Resend License Email (Manual Recovery)
+
+If email sending fails during webhook processing, you can manually resend:
+
+```
+GET /api/v1/resend-email?license_key=XXXX-XXXX-XXXX-XXXX
+```
+
+Success response:
+```json
+{
+  "success": true,
+  "message": "Email sent successfully to user@example.com"
+}
+```
+
+### Batch Resend Failed Emails
+
+To resend all emails that previously failed:
+
+```
+POST /api/v1/resend-failed-emails
+```
+
+Response:
+```json
+{
+  "total_processed": 5,
+  "successful": 4,
+  "failed": 1,
+  "errors": ["Failed to send email for license XXXX-XXXX-XXXX-XXXX: ..."]
+}
+```
 
 ## Database Schema
 
@@ -106,6 +140,8 @@ Environment variables (can be set in `.env` file):
 | `DATABASE_URL` | SQLite database path | `sqlite:./licenses.db` |
 | `LISTEN_ADDR` | Server bind address | `0.0.0.0:8080` |
 | `PADDLE_WEBHOOK_SECRET` | Paddle webhook signing secret | (empty) |
+| `RESEND_API_KEY` | Resend.com API key for sending emails | (empty) |
+| `RESEND_FROM_EMAIL` | Email address to send from | `noreply@overlook.app` |
 | `RUST_LOG` | Log level | `info` |
 
 ## Paddle Integration
@@ -218,6 +254,53 @@ The license server implements single-device binding:
    - macOS: `IOPlatformUUID`
    - Windows: `MachineGuid` from Registry
 
+## Email Delivery Recovery
+
+The license server includes automatic email tracking and recovery for failed email deliveries:
+
+### How It Works
+
+1. **Automatic Email Sending**: When a purchase is completed via Paddle webhook, the server:
+   - Creates the license in the database
+   - Attempts to send the license key via email (using Resend.com)
+   - Tracks success/failure in the database
+
+2. **Email Tracking Fields**:
+   - `email_sent`: Whether the email was successfully delivered
+   - `email_sent_at`: Timestamp of successful delivery
+   - `email_send_attempts`: Number of send attempts
+   - `email_last_error`: Last error message (if failed)
+
+3. **Recovery Options**:
+   - **Manual resend for specific license**: `GET /api/v1/resend-email?license_key=XXXX`
+   - **Batch resend all failures**: `POST /api/v1/resend-failed-emails`
+
+### Monitoring Failed Emails
+
+Check the logs for critical email failures:
+
+```bash
+# View recent email failures
+journalctl -u overlook-license -f | grep "CRITICAL"
+
+# Or search database directly
+sqlite3 /var/lib/overlook-license/licenses.db
+SELECT license_key, email, email_send_attempts, email_last_error 
+FROM licenses 
+WHERE email_sent = 0 AND email_send_attempts > 0;
+```
+
+### Setting Up Email (Resend.com)
+
+1. Sign up at [resend.com](https://resend.com)
+2. Create an API key
+3. Verify your sending domain
+4. Add to `.env`:
+   ```
+   RESEND_API_KEY=re_your_api_key
+   RESEND_FROM_EMAIL=noreply@yourdomain.com
+   ```
+
 ## Manual License Management
 
 ### Add a license manually
@@ -247,6 +330,16 @@ sqlite3 /var/lib/overlook-license/licenses.db
 UPDATE licenses
 SET hardware_id = NULL, activated_at = NULL
 WHERE license_key = 'XXXX-XXXX-XXXX-XXXX';
+```
+
+### Manually send license email
+
+```bash
+# Using curl
+curl "https://license.yourdomain.com/api/v1/resend-email?license_key=XXXX-XXXX-XXXX-XXXX"
+
+# Or resend all failed emails
+curl -X POST "https://license.yourdomain.com/api/v1/resend-failed-emails"
 ```
 
 ## Client Configuration

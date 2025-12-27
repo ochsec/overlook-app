@@ -40,6 +40,27 @@ pub async fn create_pool(database_url: &str) -> Result<PgPool, sqlx::Error> {
         .execute(&pool)
         .await?;
 
+    // Add email tracking columns if they don't exist (PostgreSQL specific syntax)
+    sqlx::query("ALTER TABLE licenses ADD COLUMN IF NOT EXISTS email_sent BOOLEAN DEFAULT FALSE")
+        .execute(&pool)
+        .await?;
+    
+    sqlx::query("ALTER TABLE licenses ADD COLUMN IF NOT EXISTS email_sent_at TEXT")
+        .execute(&pool)
+        .await?;
+    
+    sqlx::query("ALTER TABLE licenses ADD COLUMN IF NOT EXISTS email_send_attempts INTEGER DEFAULT 0")
+        .execute(&pool)
+        .await?;
+    
+    sqlx::query("ALTER TABLE licenses ADD COLUMN IF NOT EXISTS email_last_error TEXT")
+        .execute(&pool)
+        .await?;
+
+    sqlx::query("CREATE INDEX IF NOT EXISTS idx_email_sent ON licenses(email_sent)")
+        .execute(&pool)
+        .await?;
+
     // Unique constraint on license_key + hardware_id (allows multiple devices per license)
     sqlx::query("CREATE UNIQUE INDEX IF NOT EXISTS idx_license_hardware ON licenses(license_key, hardware_id) WHERE hardware_id IS NOT NULL")
         .execute(&pool)
@@ -122,4 +143,38 @@ pub async fn revoke_license_by_transaction(pool: &PgPool, transaction_id: &str) 
     .execute(pool)
     .await?;
     Ok(result.rows_affected())
+}
+
+pub async fn mark_email_sent(pool: &PgPool, license_key: &str) -> Result<(), sqlx::Error> {
+    let now = Utc::now().to_rfc3339();
+    sqlx::query(
+        "UPDATE licenses SET email_sent = TRUE, email_sent_at = $1 WHERE license_key = $2"
+    )
+    .bind(&now)
+    .bind(license_key)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+pub async fn mark_email_failed(pool: &PgPool, license_key: &str, error: &str) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        "UPDATE licenses SET email_send_attempts = COALESCE(email_send_attempts, 0) + 1, email_last_error = $1 WHERE license_key = $2"
+    )
+    .bind(error)
+    .bind(license_key)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+pub async fn find_licenses_with_failed_emails(pool: &PgPool) -> Result<Vec<License>, sqlx::Error> {
+    sqlx::query_as::<_, License>(
+        "SELECT id, license_key, email, hardware_id, created_at, activated_at, revoked, revoked_at, paddle_subscription_id, paddle_checkout_id 
+         FROM licenses 
+         WHERE email_sent = FALSE AND email_send_attempts > 0 AND revoked = FALSE
+         ORDER BY created_at DESC"
+    )
+    .fetch_all(pool)
+    .await
 }

@@ -1,5 +1,6 @@
 mod config;
 mod db;
+mod email;
 mod error;
 mod handlers;
 mod models;
@@ -57,6 +58,8 @@ async fn main() -> anyhow::Result<()> {
             "/api/v1/webhook/paddle",
             post(handlers::paddle_webhook_handler),
         )
+        .route("/api/v1/resend-email", get(handlers::resend_email_handler))
+        .route("/api/v1/resend-failed-emails", post(handlers::resend_failed_emails_handler))
         .layer(
             CorsLayer::new()
                 .allow_origin(Any)
