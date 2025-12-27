@@ -5,6 +5,16 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Overlook - Native Desktop AI Chat Client</title>
     <link rel="stylesheet" href="style.css">
+    <script src="https://cdn.paddle.com/paddle/v2/paddle.js"></script>
+    <script>
+        Paddle.Initialize({ token: 'YOUR_CLIENT_SIDE_TOKEN' }); // TODO: Replace with actual token
+
+        function openCheckout() {
+            Paddle.Checkout.open({
+                items: [{ priceId: 'pri_XXXXX' }] // TODO: Replace with actual price ID
+            });
+        }
+    </script>
 </head>
 <body>
     <header>
@@ -70,7 +80,7 @@
                     <li>Continuous updates</li>
                     <li>macOS, Windows, Linux</li>
                 </ul>
-                <a href="#" class="btn btn-primary btn-large">Purchase Now</a>
+                <button onclick="openCheckout()" class="btn btn-primary btn-large">Purchase Now</button>
             </div>
         </section>
     </main>
