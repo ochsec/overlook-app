@@ -326,10 +326,11 @@ impl Render for OrganizeView {
                             // Chats list
                             .child(
                                 div()
+                                    .id("chats_scroll")
                                     .flex()
                                     .flex_col()
                                     .flex_1()
-                                    .scrollable(ScrollbarAxis::Vertical)
+                                    .overflow_y_scroll()
                                     .p_2()
                                     .gap_1()
                                     .children(
@@ -340,7 +341,6 @@ impl Render for OrganizeView {
                                             let message_count = chat.messages.len();
                                             let state_model = state_model.clone();
                                             let state_model_delete = state_model.clone();
-                                            let theme_clone = theme.clone();
 
                                             // Get project name
                                             let project_name = chat_project_id.as_ref()
@@ -363,7 +363,6 @@ impl Render for OrganizeView {
                                                 .bg(theme.surface)
                                                 .border_1()
                                                 .border_color(theme.border)
-                                                .hover(|style| style.border_color(theme_clone.accent))
                                                 // Chat title
                                                 .child(
                                                     div()
