@@ -7,6 +7,7 @@ use uuid::Uuid;
 
 use crate::{
     db,
+    email::send_license_email,
     models::{PaddleEventType, PaddleWebhook},
     paddle::verify_paddle_signature,
     AppState,
@@ -92,6 +93,48 @@ pub async fn paddle_webhook_handler(
                         email = %email,
                         "Created new license"
                     );
+
+                    // Attempt to send email with license key
+                    if !config.resend_api_key.is_empty() {
+                        match send_license_email(
+                            &config.resend_api_key,
+                            &config.resend_from_email,
+                            &email,
+                            &license_key,
+                        )
+                        .await
+                        {
+                            Ok(_) => {
+                                tracing::info!(email = %email, "License email sent successfully");
+                                if let Err(e) = db::mark_email_sent(pool, &license_key).await {
+                                    tracing::error!("Failed to mark email as sent: {}", e);
+                                }
+                            }
+                            Err(e) => {
+                                tracing::error!(
+                                    email = %email,
+                                    license_key = %license_key,
+                                    error = %e,
+                                    "CRITICAL: Failed to send license email - customer will not receive their license key!"
+                                );
+                                if let Err(db_err) = db::mark_email_failed(pool, &license_key, &e.to_string()).await {
+                                    tracing::error!("Failed to mark email failure in database: {}", db_err);
+                                }
+                                // Still return OK to Paddle - we've stored the license
+                                // Manual intervention needed to resend email
+                            }
+                        }
+                    } else {
+                        tracing::warn!(
+                            license_key = %license_key,
+                            email = %email,
+                            "RESEND_API_KEY not configured - license email not sent"
+                        );
+                        if let Err(e) = db::mark_email_failed(pool, &license_key, "RESEND_API_KEY not configured").await {
+                            tracing::error!("Failed to mark email failure in database: {}", e);
+                        }
+                    }
+
                     StatusCode::OK
                 }
                 Err(e) => {

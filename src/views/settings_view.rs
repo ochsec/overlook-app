@@ -448,6 +448,13 @@ impl SettingsView {
                                 }
                             })
                     )
+                    .child(
+                        Button::new("purchase_license")
+                            .label("Purchase")
+                            .on_click(|_, _, _| {
+                                let _ = open::that("https://overlook.app/#purchase");
+                            })
+                    )
             )
     }
 

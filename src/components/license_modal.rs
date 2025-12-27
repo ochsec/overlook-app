@@ -127,7 +127,7 @@ impl Render for LicenseModal {
                                     .label("Purchase License")
                                     .on_click(|_, _, _cx| {
                                         // Open purchase URL in browser
-                                        if let Err(e) = open::that("https://overlook.app/purchase") {
+                                        if let Err(e) = open::that("https://overlook.app/#purchase") {
                                             eprintln!("Failed to open purchase URL: {}", e);
                                         }
                                     })
