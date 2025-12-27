@@ -340,7 +340,7 @@ impl Render for ChatHeader {
                 let state_model = state_model.clone();
                 let api_key = api_key.clone();
                 Button::new("refresh_models")
-                    .label("🔄")
+                    .label("↻")
                     .on_click(move |_, _, app| {
                         let state_model = state_model.clone();
                         let api_key = api_key.clone();
