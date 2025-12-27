@@ -191,6 +191,84 @@ main {
     margin-left: 0.25rem;
 }
 
+/* Download */
+.download {
+    padding: 6rem 0;
+    text-align: center;
+}
+
+.download h2 {
+    font-size: 2rem;
+    margin-bottom: 3rem;
+}
+
+.download-section {
+    margin-bottom: 4rem;
+}
+
+.download-section h3 {
+    font-size: 1.5rem;
+    margin-bottom: 1rem;
+}
+
+.download-subtitle {
+    color: var(--text-muted);
+    margin-bottom: 1.5rem;
+    font-size: 0.95rem;
+}
+
+.download-buttons {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    max-width: 500px;
+    margin: 0 auto;
+}
+
+.btn-secondary {
+    background: var(--bg-card);
+    color: var(--text);
+    border: 1px solid var(--border);
+}
+
+.btn-secondary:hover {
+    background: var(--border);
+    border-color: var(--accent);
+}
+
+.download-btn {
+    width: 100%;
+    text-align: center;
+    cursor: pointer;
+    border: none;
+    font-size: 1rem;
+}
+
+.download-btn.recommended {
+    box-shadow: 0 0 0 2px var(--accent);
+}
+
+.all-downloads {
+    margin-top: 3rem;
+    padding-top: 2rem;
+    border-top: 1px solid var(--border);
+}
+
+.downloads-help {
+    color: var(--text-muted);
+    font-size: 0.95rem;
+}
+
+.downloads-help a {
+    color: var(--accent);
+    text-decoration: none;
+    font-weight: 500;
+}
+
+.downloads-help a:hover {
+    text-decoration: underline;
+}
+
 /* Purchase */
 .purchase {
     padding: 6rem 0;
@@ -256,6 +334,153 @@ footer {
     font-size: 0.875rem;
 }
 
+/* Downloads Page */
+.downloads-page {
+    padding: 8rem 0 4rem;
+}
+
+.downloads-page h1 {
+    font-size: 2.5rem;
+    margin-bottom: 0.5rem;
+    text-align: center;
+}
+
+.page-subtitle {
+    font-size: 1.1rem;
+    color: var(--text-muted);
+    text-align: center;
+    margin-bottom: 4rem;
+}
+
+.download-platform {
+    margin-bottom: 4rem;
+}
+
+.platform-header {
+    text-align: center;
+    margin-bottom: 2rem;
+}
+
+.platform-header h2 {
+    font-size: 1.75rem;
+    margin-bottom: 0.25rem;
+}
+
+.platform-desc {
+    color: var(--text-muted);
+    font-size: 0.95rem;
+}
+
+.platform-downloads {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 1.5rem;
+    max-width: 700px;
+    margin: 0 auto;
+}
+
+.download-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 2rem;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+}
+
+.download-card h3 {
+    font-size: 1.25rem;
+    margin-bottom: 0.5rem;
+}
+
+.download-details {
+    color: var(--text-muted);
+    font-size: 0.9rem;
+    margin-bottom: 1.5rem;
+    flex-grow: 1;
+}
+
+.download-card .btn {
+    align-self: flex-start;
+    width: 100%;
+    text-align: center;
+}
+
+/* Installation Instructions */
+.install-instructions {
+    margin-top: 6rem;
+    padding-top: 4rem;
+    border-top: 1px solid var(--border);
+    max-width: 800px;
+    margin-left: auto;
+    margin-right: auto;
+}
+
+.install-instructions h2 {
+    font-size: 2rem;
+    margin-bottom: 2rem;
+    text-align: center;
+}
+
+.instruction-group {
+    margin-bottom: 2.5rem;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 2rem;
+}
+
+.instruction-group h3 {
+    font-size: 1.25rem;
+    margin-bottom: 1rem;
+}
+
+.instruction-group ol {
+    padding-left: 1.5rem;
+    color: var(--text-muted);
+}
+
+.instruction-group li {
+    margin-bottom: 0.75rem;
+}
+
+.instruction-group code {
+    background: var(--bg);
+    padding: 0.25rem 0.5rem;
+    border-radius: 4px;
+    font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+    font-size: 0.9rem;
+    color: var(--accent);
+}
+
+/* Support Section */
+.support-section {
+    text-align: center;
+    margin-top: 4rem;
+    padding: 3rem 0;
+}
+
+.support-section h2 {
+    font-size: 1.75rem;
+    margin-bottom: 1rem;
+}
+
+.support-section p {
+    color: var(--text-muted);
+    max-width: 500px;
+    margin: 0 auto;
+}
+
+.support-section a {
+    color: var(--accent);
+    text-decoration: none;
+}
+
+.support-section a:hover {
+    text-decoration: underline;
+}
+
 /* Responsive */
 @media (max-width: 768px) {
     .hero h1 {
@@ -268,5 +493,25 @@ footer {
 
     nav {
         padding: 1rem;
+    }
+
+    .download-buttons {
+        max-width: 100%;
+    }
+
+    .download-section h3 {
+        font-size: 1.25rem;
+    }
+
+    .platform-downloads {
+        grid-template-columns: 1fr;
+    }
+
+    .downloads-page h1 {
+        font-size: 2rem;
+    }
+
+    .install-instructions {
+        max-width: 100%;
     }
 }

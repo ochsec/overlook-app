@@ -14,6 +14,107 @@
                 items: [{ priceId: 'pri_XXXXX' }] // TODO: Replace with actual price ID
             });
         }
+
+        // OS and Architecture Detection
+        function detectOS() {
+            const userAgent = navigator.userAgent.toLowerCase();
+            
+            if (userAgent.includes('mac') || userAgent.includes('iphone') || userAgent.includes('ipad')) {
+                return 'macos';
+            } else if (userAgent.includes('win')) {
+                return 'windows';
+            } else if (userAgent.includes('linux') || userAgent.includes('x11')) {
+                return 'linux';
+            }
+            return null;
+        }
+
+        function detectArchitecture() {
+            // Check for Apple Silicon (M1, M2, etc.)
+            if (navigator.userAgent.includes('Mac') && navigator.userAgent.includes('arm64')) {
+                return 'arm64';
+            }
+            // Check if running on Windows ARM
+            if (navigator.userAgent.includes('Win') && navigator.userAgent.includes('ARM')) {
+                return 'arm64';
+            }
+            // Default to x64
+            return 'x64';
+        }
+
+        function getBinaryDownloadUrl(os, arch) {
+            const releaseUrl = 'https://github.com/your-username/overlook/releases/download/latest';
+            const filenames = {
+                macos: {
+                    x64: 'overlook-macos-x86_64.dmg',
+                    arm64: 'overlook-macos-arm64.dmg'
+                },
+                windows: {
+                    x64: 'overlook-windows-x86_64.exe',
+                    arm64: 'overlook-windows-arm64.exe'
+                },
+                linux: {
+                    x64: 'overlook-linux-x86_64.tar.gz',
+                    arm64: 'overlook-linux-arm64.tar.gz'
+                }
+            };
+            
+            if (filenames[os] && filenames[os][arch]) {
+                return `${releaseUrl}/${filenames[os][arch]}`;
+            }
+            return null;
+        }
+
+        function getOSLabel(os) {
+            const labels = {
+                macos: 'macOS',
+                windows: 'Windows',
+                linux: 'Linux'
+            };
+            return labels[os] || os;
+        }
+
+        function initializeDownloads() {
+            const detectedOS = detectOS();
+            const detectedArch = detectArchitecture();
+            
+            // Hide all OS sections initially
+            document.querySelectorAll('.download-section').forEach(section => {
+                section.style.display = 'none';
+            });
+            
+            // Show detected OS section
+            if (detectedOS) {
+                const section = document.getElementById(`download-${detectedOS}`);
+                if (section) {
+                    section.style.display = 'block';
+                }
+                
+                // Highlight the recommended download
+                const recommendedBtn = document.querySelector(`[data-os="${detectedOS}"][data-arch="${detectedArch}"]`);
+                if (recommendedBtn) {
+                    recommendedBtn.classList.add('recommended');
+                    recommendedBtn.textContent = '⬇ Recommended - Download for ' + getOSLabel(detectedOS) + ' (' + detectedArch + ')';
+                }
+            }
+            
+            // Attach click handlers to all download buttons
+            document.querySelectorAll('.download-btn').forEach(btn => {
+                btn.addEventListener('click', function(e) {
+                    const os = this.dataset.os;
+                    const arch = this.dataset.arch;
+                    const url = getBinaryDownloadUrl(os, arch);
+                    if (url) {
+                        window.location.href = url;
+                    } else {
+                        alert('Download not yet available for ' + getOSLabel(os) + ' (' + arch + ')');
+                    }
+                });
+            });
+        }
+
+        // Initialize on page load
+        document.addEventListener('DOMContentLoaded', initializeDownloads);
     </script>
 </head>
 <body>
@@ -65,6 +166,45 @@
                     <h3>Export Your Chats</h3>
                     <p>Your conversations belong to you. Export any chat to Markdown for archiving, sharing, or using in your own workflows.</p>
                 </div>
+            </div>
+        </section>
+
+        <section id="download" class="download">
+            <h2>Download Overlook</h2>
+            
+            <!-- macOS Downloads -->
+            <div id="download-macos" class="download-section">
+                <h3>macOS</h3>
+                <p class="download-subtitle">Choose your chip architecture:</p>
+                <div class="download-buttons">
+                    <button class="btn btn-primary download-btn" data-os="macos" data-arch="arm64">Download for Apple Silicon (M1/M2/M3)</button>
+                    <button class="btn btn-secondary download-btn" data-os="macos" data-arch="x64">Download for Intel</button>
+                </div>
+            </div>
+
+            <!-- Windows Downloads -->
+            <div id="download-windows" class="download-section">
+                <h3>Windows</h3>
+                <p class="download-subtitle">Choose your architecture:</p>
+                <div class="download-buttons">
+                    <button class="btn btn-primary download-btn" data-os="windows" data-arch="x64">Download for Windows (64-bit)</button>
+                    <button class="btn btn-secondary download-btn" data-os="windows" data-arch="arm64">Download for Windows (ARM)</button>
+                </div>
+            </div>
+
+            <!-- Linux Downloads -->
+            <div id="download-linux" class="download-section">
+                <h3>Linux</h3>
+                <p class="download-subtitle">Choose your architecture:</p>
+                <div class="download-buttons">
+                    <button class="btn btn-primary download-btn" data-os="linux" data-arch="x64">Download for Linux (64-bit)</button>
+                    <button class="btn btn-secondary download-btn" data-os="linux" data-arch="arm64">Download for Linux (ARM)</button>
+                </div>
+            </div>
+
+            <!-- All Downloads -->
+            <div class="all-downloads">
+                <p class="downloads-help">Not seeing your OS? <a href="downloads.html">View all available downloads</a></p>
             </div>
         </section>
 

@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Download Overlook - All Versions</title>
+    <link rel="stylesheet" href="style.css">
+    <script>
+        function getBinaryDownloadUrl(os, arch) {
+            const releaseUrl = 'https://github.com/your-username/overlook/releases/download/latest';
+            const filenames = {
+                macos: {
+                    x64: 'overlook-macos-x86_64.dmg',
+                    arm64: 'overlook-macos-arm64.dmg'
+                },
+                windows: {
+                    x64: 'overlook-windows-x86_64.exe',
+                    arm64: 'overlook-windows-arm64.exe'
+                },
+                linux: {
+                    x64: 'overlook-linux-x86_64.tar.gz',
+                    arm64: 'overlook-linux-arm64.tar.gz'
+                }
+            };
+            
+            if (filenames[os] && filenames[os][arch]) {
+                return `${releaseUrl}/${filenames[os][arch]}`;
+            }
+            return null;
+        }
+
+        function downloadBinary(os, arch) {
+            const url = getBinaryDownloadUrl(os, arch);
+            if (url) {
+                window.location.href = url;
+            } else {
+                alert('Download not yet available for this combination');
+            }
+        }
+    </script>
+</head>
+<body>
+    <header>
+        <nav>
+            <div class="logo">
+                <img src="../assets/overlook.png" alt="Overlook" class="logo-img">
+                <span>Overlook</span>
+            </div>
+            <a href="index.html" class="btn btn-primary">Back to Home</a>
+        </nav>
+    </header>
+
+    <main>
+        <section class="downloads-page">
+            <h1>Download Overlook</h1>
+            <p class="page-subtitle">Choose your operating system and architecture below</p>
+
+            <!-- macOS -->
+            <div class="download-platform">
+                <div class="platform-header">
+                    <h2>macOS</h2>
+                    <p class="platform-desc">Universal and Intel Macs</p>
+                </div>
+                <div class="platform-downloads">
+                    <div class="download-card">
+                        <div class="download-info">
+                            <h3>Apple Silicon</h3>
+                            <p class="download-details">M1, M2, M3, M4 and later</p>
+                        </div>
+                        <button class="btn btn-primary" onclick="downloadBinary('macos', 'arm64')">
+                            Download (arm64)
+                        </button>
+                    </div>
+                    <div class="download-card">
+                        <div class="download-info">
+                            <h3>Intel</h3>
+                            <p class="download-details">Older Intel-based Macs</p>
+                        </div>
+                        <button class="btn btn-primary" onclick="downloadBinary('macos', 'x64')">
+                            Download (x86_64)
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Windows -->
+            <div class="download-platform">
+                <div class="platform-header">
+                    <h2>Windows</h2>
+                    <p class="platform-desc">Windows 10 and later</p>
+                </div>
+                <div class="platform-downloads">
+                    <div class="download-card">
+                        <div class="download-info">
+                            <h3>64-bit</h3>
+                            <p class="download-details">Most common Windows systems</p>
+                        </div>
+                        <button class="btn btn-primary" onclick="downloadBinary('windows', 'x64')">
+                            Download (x86_64)
+                        </button>
+                    </div>
+                    <div class="download-card">
+                        <div class="download-info">
+                            <h3>ARM</h3>
+                            <p class="download-details">Windows on ARM devices</p>
+                        </div>
+                        <button class="btn btn-primary" onclick="downloadBinary('windows', 'arm64')">
+                            Download (ARM64)
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Linux -->
+            <div class="download-platform">
+                <div class="platform-header">
+                    <h2>Linux</h2>
+                    <p class="platform-desc">Tar.gz archives for all major distributions</p>
+                </div>
+                <div class="platform-downloads">
+                    <div class="download-card">
+                        <div class="download-info">
+                            <h3>64-bit</h3>
+                            <p class="download-details">x86_64 architecture</p>
+                        </div>
+                        <button class="btn btn-primary" onclick="downloadBinary('linux', 'x64')">
+                            Download (x86_64)
+                        </button>
+                    </div>
+                    <div class="download-card">
+                        <div class="download-info">
+                            <h3>ARM</h3>
+                            <p class="download-details">ARM-based systems (Raspberry Pi, etc.)</p>
+                        </div>
+                        <button class="btn btn-primary" onclick="downloadBinary('linux', 'arm64')">
+                            Download (ARM64)
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Installation Instructions -->
+            <section class="install-instructions">
+                <h2>Installation Instructions</h2>
+                
+                <div class="instruction-group">
+                    <h3>macOS</h3>
+                    <ol>
+                        <li>Download the .dmg file for your architecture</li>
+                        <li>Open the downloaded .dmg file</li>
+                        <li>Drag "Overlook" into the Applications folder</li>
+                        <li>Open Applications and double-click Overlook to launch</li>
+                    </ol>
+                </div>
+
+                <div class="instruction-group">
+                    <h3>Windows</h3>
+                    <ol>
+                        <li>Download the .exe file</li>
+                        <li>Run the installer and follow the prompts</li>
+                        <li>Overlook will be added to your Start menu</li>
+                        <li>Launch from the Start menu or create a desktop shortcut</li>
+                    </ol>
+                </div>
+
+                <div class="instruction-group">
+                    <h3>Linux</h3>
+                    <ol>
+                        <li>Download the .tar.gz file for your architecture</li>
+                        <li>Extract: <code>tar -xzf overlook-linux-*.tar.gz</code></li>
+                        <li>Navigate to the extracted directory: <code>cd overlook</code></li>
+                        <li>Run: <code>./overlook</code></li>
+                        <li>Optionally, move to PATH: <code>sudo mv overlook /usr/local/bin/</code></li>
+                    </ol>
+                </div>
+            </section>
+
+            <!-- Support -->
+            <section class="support-section">
+                <h2>Need Help?</h2>
+                <p>If you encounter any issues during installation or launch, please check our <a href="#">documentation</a> or report an issue on <a href="#">GitHub</a>.</p>
+            </section>
+        </section>
+    </main>
+
+    <footer>
+        <p>&copy; 2025 REPL Made LLC. All rights reserved.</p>
+    </footer>
+</body>
+</html>
