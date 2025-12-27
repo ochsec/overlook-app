@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
 pub struct License {
-    pub id: i64,
+    pub id: i32,
     pub license_key: String,
     pub email: String,
     pub hardware_id: Option<String>,

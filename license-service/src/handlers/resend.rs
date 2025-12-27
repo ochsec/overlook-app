@@ -76,7 +76,7 @@ pub async fn resend_email_handler(
     // Send the email
     match send_license_email(
         &config.resend_api_key,
-        &config.resend_from_email,
+        &config.email_from,
         &license.email,
         &license.license_key,
     )
@@ -168,7 +168,7 @@ pub async fn resend_failed_emails_handler(
     for license in failed_licenses {
         match send_license_email(
             &config.resend_api_key,
-            &config.resend_from_email,
+            &config.email_from,
             &license.email,
             &license.license_key,
         )
