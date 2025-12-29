@@ -12,6 +12,92 @@ use crate::components::message_bubble::{MessageBubble, render_streaming_message}
 use crate::types::Message;
 use crate::gpui_theme::GpuiTheme;
 
+/// A "turn" groups a user message with its associated responses
+struct Turn<'a> {
+    user_message: &'a Message,
+    user_message_index: usize,
+    search_message: Option<&'a Message>,
+    assistant_messages: Vec<(&'a Message, usize)>,
+}
+
+/// Generate a short title from user message content
+fn generate_turn_title(content: &str) -> String {
+    let content = content.trim();
+    if content.is_empty() {
+        return "New message".to_string();
+    }
+    
+    // Find first sentence end or take first 60 chars
+    let sentence_end = content.find(|c| c == '.' || c == '!' || c == '?')
+        .map(|i| i + 1);
+    
+    let end = match sentence_end {
+        Some(i) if i <= 60 => i,
+        _ => {
+            // Take up to 60 chars, but don't break mid-word
+            let chars: String = content.chars().take(60).collect();
+            if content.len() > 60 {
+                // Find last space to avoid breaking words
+                chars.rfind(' ').unwrap_or(chars.len())
+            } else {
+                chars.len()
+            }
+        }
+    };
+    
+    let title: String = content.chars().take(end).collect();
+    
+    if content.len() > end {
+        format!("{}...", title.trim_end())
+    } else {
+        title
+    }
+}
+
+/// Group messages into turns (user message + associated responses)
+fn group_messages_into_turns(messages: &[Message]) -> Vec<Turn<'_>> {
+    let mut turns: Vec<Turn<'_>> = Vec::new();
+    let mut current_turn: Option<Turn<'_>> = None;
+    
+    for (idx, msg) in messages.iter().enumerate() {
+        match msg.role.as_str() {
+            "user" => {
+                // Save previous turn if exists
+                if let Some(turn) = current_turn.take() {
+                    turns.push(turn);
+                }
+                // Start new turn
+                current_turn = Some(Turn {
+                    user_message: msg,
+                    user_message_index: idx,
+                    search_message: None,
+                    assistant_messages: Vec::new(),
+                });
+            }
+            "system" if msg.search_results.is_some() => {
+                // Add search results to current turn
+                if let Some(ref mut turn) = current_turn {
+                    turn.search_message = Some(msg);
+                }
+            }
+            "assistant" => {
+                // Add assistant message to current turn
+                if let Some(ref mut turn) = current_turn {
+                    turn.assistant_messages.push((msg, idx));
+                }
+            }
+            _ => {}
+        }
+    }
+    
+    // Don't forget the last turn
+    if let Some(turn) = current_turn {
+        turns.push(turn);
+    }
+    
+    turns
+}
+
 pub struct ChatView {
     state: Entity<AppState>,
     header: Entity<ChatHeader>,
@@ -246,6 +332,82 @@ impl ChatView {
                 )
             })
     }
+
+    fn render_turn(
+        &mut self,
+        turn_idx: usize,
+        turn: &Turn,
+        theme: &GpuiTheme,
+        font_size: f32,
+        editing_index: Option<usize>,
+        expanded_indices: &HashSet<usize>,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
+        let title = generate_turn_title(&turn.user_message.content);
+        let user_idx = turn.user_message_index;
+        let is_editing = Some(user_idx) == editing_index;
+        
+        // Clone data needed for rendering
+        let user_message = turn.user_message.clone();
+        let search_message = turn.search_message.cloned();
+        let assistant_messages: Vec<(Message, usize)> = turn.assistant_messages
+            .iter()
+            .map(|(m, idx)| ((*m).clone(), *idx))
+            .collect();
+        let search_idx = user_idx; // Use user message index for search toggle
+        let is_search_expanded = expanded_indices.contains(&search_idx);
+        
+        div()
+            .id(("turn", turn_idx))
+            .flex()
+            .flex_col()
+            .w_full()
+            // Turn header with title
+            .child(
+                div()
+                    .id(("turn_header", turn_idx))
+                    .bg(theme.background)
+                    .pt_2()
+                    .pb_1()
+                    .px_4()
+                    .child(
+                        div()
+                            .text_size(px(font_size))
+                            .font_weight(FontWeight::MEDIUM)
+                            .text_color(theme.text_primary)
+                            .overflow_hidden()
+                            .whitespace_nowrap()
+                            .child(title)
+                    )
+            )
+            // Turn content
+            .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    // User message (editable)
+                    .child(
+                        if is_editing {
+                            self.render_edit_mode(user_idx, theme, font_size, cx).into_any_element()
+                        } else {
+                            self.render_user_message_with_edit(user_idx, &user_message, theme, font_size, cx).into_any_element()
+                        }
+                    )
+                    // Search results (if any)
+                    .when_some(search_message, |this, search_msg| {
+                        this.child(self.render_search_results_element(search_idx, &search_msg, is_search_expanded, cx))
+                    })
+                    // Assistant messages
+                    .children(
+                        assistant_messages.iter().map(|(msg, idx)| {
+                            MessageBubble::new(msg.clone(), theme.clone(), font_size)
+                                .with_index(*idx)
+                                .render_element()
+                                .into_any_element()
+                        })
+                    )
+            )
+    }
 }
 
 impl Render for ChatView {
@@ -308,25 +470,13 @@ impl ChatView {
             .overflow_hidden()
             .child(
                 if let Some(messages) = messages {
-                    // Pre-build message elements
-                    let message_elements: Vec<AnyElement> = messages.iter().enumerate().map(|(idx, msg)| {
-                        if msg.search_results.is_some() {
-                            let is_expanded = expanded_indices.contains(&idx);
-                            self.render_search_results_element(idx, msg, is_expanded, cx).into_any_element()
-                        } else if msg.role == "user" {
-                            // User messages: check if being edited
-                            if Some(idx) == editing_index {
-                                self.render_edit_mode(idx, &theme, font_size, cx).into_any_element()
-                            } else {
-                                self.render_user_message_with_edit(idx, msg, &theme, font_size, cx).into_any_element()
-                            }
-                        } else {
-                            // Non-user messages: use existing MessageBubble
-                            MessageBubble::new(msg.clone(), theme.clone(), font_size)
-                                .with_index(idx)
-                                .render_element()
-                                .into_any_element()
-                        }
+                    // Group messages into turns (user message + responses)
+                    let turns = group_messages_into_turns(&messages);
+                    
+                    // Build turn elements
+                    let turn_elements: Vec<AnyElement> = turns.iter().enumerate().map(|(turn_idx, turn)| {
+                        self.render_turn(turn_idx, turn, &theme, font_size, editing_index, &expanded_indices, cx)
+                            .into_any_element()
                     }).collect();
 
                     div()
@@ -335,9 +485,10 @@ impl ChatView {
                         .flex_col()
                         .flex_1()
                         .pr_4()
+                        .gap_4()  // Gap between turns
                         .track_scroll(&self.scroll_handle)
                         .scrollable(ScrollbarAxis::Vertical)
-                        .children(message_elements)
+                        .children(turn_elements)
                         // Streaming message
                         .when(streaming_active && !streaming_message.is_empty(), |this| {
                             this.child(

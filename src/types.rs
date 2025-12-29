@@ -117,6 +117,9 @@ pub struct Message {
     pub model: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub search_results: Option<Vec<SearchResult>>,
+    /// Auto-generated title for user messages (used in turn headers)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]

@@ -118,6 +118,7 @@ impl ChatInput {
             provider: Some(provider),
             model: Some(model.clone()),
             search_results: None,
+            title: None,
         };
 
         // Create or update chat
@@ -352,6 +353,7 @@ impl ChatInput {
                             provider: Some(provider),
                             model: Some(model.clone()),
                             search_results: None,
+                            title: None,
                         };
 
                         let api_client = ApiClient::new();
@@ -402,6 +404,7 @@ impl ChatInput {
                         provider: Some(provider),
                         model: Some(model.clone()),
                         search_results: if search_results.is_empty() { None } else { Some(search_results) },
+                        title: None,
                     };
                     // Insert at the beginning
                     final_api_messages.insert(0, search_message);
@@ -468,6 +471,7 @@ impl ChatInput {
                                 provider: Some(provider),
                                 model: Some(model_for_result.clone()),
                                 search_results: None,
+                                title: None,
                             };
 
                             // Add to chat
@@ -531,6 +535,7 @@ impl ChatInput {
                                     provider: Some(provider),
                                     model: Some(model_for_result.clone()),
                                     search_results: None,
+                                    title: None,
                                 };
 
                                 // Add to chat
