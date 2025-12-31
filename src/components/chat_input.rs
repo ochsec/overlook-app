@@ -22,7 +22,7 @@ impl ChatInput {
             InputState::new(window, cx)
                 .multi_line()
                 .auto_grow(1, 10)
-                .placeholder("_")
+                .placeholder("Type message... (click [\\n] to add line breaks)")
         });
 
         // Subscribe to input events to handle Enter key
@@ -36,15 +36,17 @@ impl ChatInput {
         &mut self,
         _input: &Entity<InputState>,
         event: &InputEvent,
-        window: &mut Window,
+        _window: &mut Window,
         cx: &mut Context<Self>,
     ) {
         match event {
             InputEvent::PressEnter { secondary } => {
-                // secondary = true means Shift+Enter (insert newline)
-                // secondary = false means Enter (submit)
-                if !secondary {
-                    self.submit_message(window, cx);
+                // In multi-line mode with InputState:
+                // - Plain Enter (secondary=false) should submit the message
+                // - Shift+Enter should insert a newline, but it doesn't fire this event
+                if !*secondary {
+                    // Only handle plain Enter for message submission
+                    self.submit_message(_window, cx);
                 }
             }
             _ => {}
@@ -254,6 +256,16 @@ impl ChatInput {
         } else {
             Self::send_non_streaming_message(state_model, chat_id, model, provider, api_key, api_messages, cx);
         }
+    }
+
+    fn insert_newline(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let input_entity = self.input.clone();
+        let current_value = input_entity.read(cx).value().to_string();
+        let new_value = format!("{}\n", current_value);
+        
+        input_entity.update(cx, |input_state, cx| {
+            input_state.set_value(&new_value, window, cx);
+        });
     }
 
     fn open_file_picker(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
@@ -652,7 +664,7 @@ impl Render for ChatInput {
             .child(
                 div()
                     .flex()
-                    .items_center()
+                    .items_start()
                     .gap_2()
                     // Prompt indicator
                     .child(
@@ -660,12 +672,20 @@ impl Render for ChatInput {
                             .text_size(px(font_size))
                             .text_color(theme_accent)
                             .font_weight(FontWeight::BOLD)
+                            .pt_2()
                             .child(">")
                     )
                     .child(
-                        // Text input area - terminal style (no background/border)
+                        // Text input area - textarea style with border
                         div()
                             .flex_1()
+                            .border_1()
+                            .border_color(theme_border)
+                            .rounded_md()
+                            .px_2()
+                            .py_2()
+                            .bg(gpui::rgb(0x1a1a1a))
+                            .min_h(px(font_size * 3.0 + 16.0))
                             .child(
                                 Input::new(&self.input)
                                     .cleanable(false)
@@ -683,9 +703,24 @@ impl Render for ChatInput {
                             .text_color(theme_text_muted)
                             .cursor_pointer()
                             .hover(|s| s.text_color(theme_text_primary))
+                            .pt_2()
                             .child("[attach]")
                             .on_click(cx.listener(|this, _, window, cx| {
                                 this.open_file_picker(window, cx);
+                            }))
+                    )
+                    .child(
+                        // Line break button
+                        div()
+                            .id("newline_btn")
+                            .text_size(px(font_size - 2.0))
+                            .text_color(theme_text_muted)
+                            .cursor_pointer()
+                            .hover(|s| s.text_color(theme_text_primary))
+                            .pt_2()
+                            .child("[\\n]")
+                            .on_click(cx.listener(|this, _, window, cx| {
+                                this.insert_newline(window, cx);
                             }))
                     )
                     .child(
@@ -696,6 +731,7 @@ impl Render for ChatInput {
                             .text_color(if is_sending { theme_text_muted } else { theme_text_primary })
                             .cursor_pointer()
                             .when(!is_sending, |this| this.hover(|s| s.text_color(theme_accent)))
+                            .pt_2()
                             .child(send_label)
                             .when(!is_sending, |this| {
                                 this.on_click(cx.listener(|this, _, window, cx| {
