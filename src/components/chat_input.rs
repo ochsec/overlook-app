@@ -682,7 +682,7 @@ impl Render for ChatInput {
                             .px_2()
                             .py_2()
                             .bg(gpui::rgb(0x1a1a1a))
-                            .min_h(px(font_size * 3.0 + 16.0))
+                            .min_h(px(font_size * 5.0 + 24.0))
                             .child(
                                 Input::new(&self.input)
                                     .cleanable(false)
