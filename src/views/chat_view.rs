@@ -1,16 +1,16 @@
 // Chat View - Main chat interface
-use gpui::*;
-use gpui::prelude::*;
-use gpui_component::{StyledExt, scroll::ScrollbarAxis};
-use gpui_component::input::{InputState, Input, InputEvent};
-use std::collections::HashSet;
-use crate::state::AppState;
-use crate::storage::Storage;
 use crate::components::chat_header::ChatHeader;
 use crate::components::chat_input::ChatInput;
-use crate::components::message_bubble::{MessageBubble, render_streaming_message};
-use crate::types::Message;
+use crate::components::message_bubble::{render_streaming_message, MessageBubble};
 use crate::gpui_theme::GpuiTheme;
+use crate::state::AppState;
+use crate::storage::Storage;
+use crate::types::Message;
+use gpui::prelude::*;
+use gpui::*;
+use gpui_component::input::{Input, InputEvent, InputState};
+use gpui_component::{scroll::ScrollbarAxis, StyledExt};
+use std::collections::HashSet;
 
 /// A "turn" groups a user message with its associated responses
 struct Turn<'a> {
@@ -26,11 +26,12 @@ fn generate_turn_title(content: &str) -> String {
     if content.is_empty() {
         return "New message".to_string();
     }
-    
+
     // Find first sentence end or take first 60 chars
-    let sentence_end = content.find(|c| c == '.' || c == '!' || c == '?')
+    let sentence_end = content
+        .find(|c| c == '.' || c == '!' || c == '?')
         .map(|i| i + 1);
-    
+
     let end = match sentence_end {
         Some(i) if i <= 60 => i,
         _ => {
@@ -44,9 +45,9 @@ fn generate_turn_title(content: &str) -> String {
             }
         }
     };
-    
+
     let title: String = content.chars().take(end).collect();
-    
+
     if content.len() > end {
         format!("{}...", title.trim_end())
     } else {
@@ -58,7 +59,7 @@ fn generate_turn_title(content: &str) -> String {
 fn group_messages_into_turns(messages: &[Message]) -> Vec<Turn<'_>> {
     let mut turns: Vec<Turn<'_>> = Vec::new();
     let mut current_turn: Option<Turn<'_>> = None;
-    
+
     for (idx, msg) in messages.iter().enumerate() {
         match msg.role.as_str() {
             "user" => {
@@ -89,12 +90,12 @@ fn group_messages_into_turns(messages: &[Message]) -> Vec<Turn<'_>> {
             _ => {}
         }
     }
-    
+
     // Don't forget the last turn
     if let Some(turn) = current_turn {
         turns.push(turn);
     }
-    
+
     turns
 }
 
@@ -126,11 +127,7 @@ impl ChatView {
 
     fn ensure_edit_input(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.edit_input.is_none() {
-            let input = cx.new(|cx| {
-                InputState::new(window, cx)
-                    .multi_line()
-                    .auto_grow(1, 10)
-            });
+            let input = cx.new(|cx| InputState::new(window, cx).multi_line().auto_grow(1, 10));
 
             // Subscribe to input events for Enter key handling
             cx.subscribe_in(&input, window, Self::handle_edit_input_event)
@@ -149,7 +146,15 @@ impl ChatView {
     ) {
         match event {
             InputEvent::PressEnter { secondary } => {
-                if !secondary {
+                if *secondary {
+                    // Shift+Enter should insert a newline in edit mode
+                    if let Some(input) = &self.edit_input {
+                        input.update(cx, |input_state, cx| {
+                            // Insert a newline at the current cursor position
+                            input_state.insert("\n", window, cx);
+                        });
+                    }
+                } else {
                     // Enter without Shift = save
                     self.save_edit_and_resubmit(window, cx);
                 }
@@ -158,7 +163,13 @@ impl ChatView {
         }
     }
 
-    fn start_editing(&mut self, index: usize, content: String, window: &mut Window, cx: &mut Context<Self>) {
+    fn start_editing(
+        &mut self,
+        index: usize,
+        content: String,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         self.ensure_edit_input(window, cx);
         if let Some(input) = &self.edit_input {
             input.update(cx, |input, cx| {
@@ -175,8 +186,12 @@ impl ChatView {
     }
 
     fn save_edit_and_resubmit(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(index) = self.editing_message_index else { return };
-        let Some(input) = &self.edit_input else { return };
+        let Some(index) = self.editing_message_index else {
+            return;
+        };
+        let Some(input) = &self.edit_input else {
+            return;
+        };
 
         let new_content = input.read(cx).value().to_string();
         let new_content = new_content.trim().to_string();
@@ -264,19 +279,16 @@ impl ChatView {
                     .child(toggle_label)
                     .on_click(cx.listener(move |this, _, _, cx| {
                         this.toggle_search_expanded(idx, cx);
-                    }))
+                    })),
             )
             // Expanded content
             .when(is_expanded, |this| {
                 this.child(
-                    div()
-                        .flex()
-                        .flex_col()
-                        .pl_4()
-                        .gap_1()
-                        .mt_1()
-                        .children(
-                            results_clone.iter().enumerate().map(|(i, result)| {
+                    div().flex().flex_col().pl_4().gap_1().mt_1().children(
+                        results_clone
+                            .iter()
+                            .enumerate()
+                            .map(|(i, result)| {
                                 div()
                                     .flex()
                                     .flex_col()
@@ -293,7 +305,7 @@ impl ChatView {
                                                 div()
                                                     .text_size(px(font_size - 2.0))
                                                     .text_color(theme.text_muted)
-                                                    .child(format!("[{}]", i + 1))
+                                                    .child(format!("[{}]", i + 1)),
                                             )
                                             .child(
                                                 div()
@@ -301,15 +313,15 @@ impl ChatView {
                                                     .text_color(theme.accent)
                                                     .font_weight(FontWeight::MEDIUM)
                                                     .whitespace_normal()
-                                                    .child(result.title.clone())
-                                            )
+                                                    .child(result.title.clone()),
+                                            ),
                                     )
                                     .child(
                                         // URL
                                         div()
                                             .text_size(px(font_size - 3.0))
                                             .text_color(theme.text_muted)
-                                            .child(result.url.clone())
+                                            .child(result.url.clone()),
                                     )
                                     .when(!result.content.is_empty(), |el| {
                                         // Content snippet (truncated)
@@ -323,12 +335,13 @@ impl ChatView {
                                                 .text_size(px(font_size - 2.0))
                                                 .text_color(theme.text_secondary)
                                                 .whitespace_normal()
-                                                .child(content)
+                                                .child(content),
                                         )
                                     })
                                     .into_any_element()
-                            }).collect::<Vec<_>>()
-                        )
+                            })
+                            .collect::<Vec<_>>(),
+                    ),
                 )
             })
     }
@@ -346,17 +359,18 @@ impl ChatView {
         let title = generate_turn_title(&turn.user_message.content);
         let user_idx = turn.user_message_index;
         let is_editing = Some(user_idx) == editing_index;
-        
+
         // Clone data needed for rendering
         let user_message = turn.user_message.clone();
         let search_message = turn.search_message.cloned();
-        let assistant_messages: Vec<(Message, usize)> = turn.assistant_messages
+        let assistant_messages: Vec<(Message, usize)> = turn
+            .assistant_messages
             .iter()
             .map(|(m, idx)| ((*m).clone(), *idx))
             .collect();
         let search_idx = user_idx; // Use user message index for search toggle
         let is_search_expanded = expanded_indices.contains(&search_idx);
-        
+
         div()
             .id(("turn", turn_idx))
             .flex()
@@ -377,8 +391,8 @@ impl ChatView {
                             .text_color(theme.text_primary)
                             .overflow_hidden()
                             .whitespace_nowrap()
-                            .child(title)
-                    )
+                            .child(title),
+                    ),
             )
             // Turn content
             .child(
@@ -386,26 +400,35 @@ impl ChatView {
                     .flex()
                     .flex_col()
                     // User message (editable)
-                    .child(
-                        if is_editing {
-                            self.render_edit_mode(user_idx, theme, font_size, cx).into_any_element()
-                        } else {
-                            self.render_user_message_with_edit(user_idx, &user_message, theme, font_size, cx).into_any_element()
-                        }
-                    )
+                    .child(if is_editing {
+                        self.render_edit_mode(user_idx, theme, font_size, cx)
+                            .into_any_element()
+                    } else {
+                        self.render_user_message_with_edit(
+                            user_idx,
+                            &user_message,
+                            theme,
+                            font_size,
+                            cx,
+                        )
+                        .into_any_element()
+                    })
                     // Search results (if any)
                     .when_some(search_message, |this, search_msg| {
-                        this.child(self.render_search_results_element(search_idx, &search_msg, is_search_expanded, cx))
+                        this.child(self.render_search_results_element(
+                            search_idx,
+                            &search_msg,
+                            is_search_expanded,
+                            cx,
+                        ))
                     })
                     // Assistant messages
-                    .children(
-                        assistant_messages.iter().map(|(msg, idx)| {
-                            MessageBubble::new(msg.clone(), theme.clone(), font_size)
-                                .with_index(*idx)
-                                .render_element()
-                                .into_any_element()
-                        })
-                    )
+                    .children(assistant_messages.iter().map(|(msg, idx)| {
+                        MessageBubble::new(msg.clone(), theme.clone(), font_size)
+                            .with_index(*idx)
+                            .render_element()
+                            .into_any_element()
+                    })),
             )
     }
 }
@@ -439,7 +462,15 @@ impl Render for ChatView {
 impl ChatView {
     fn render_messages_area(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
         // First extract all needed data from state
-        let (messages, theme, font_size, streaming_active, streaming_message, stream_completed, sending_message) = {
+        let (
+            messages,
+            theme,
+            font_size,
+            streaming_active,
+            streaming_message,
+            stream_completed,
+            sending_message,
+        ) = {
             let state = self.state.read(cx);
             if let Some(chat_id) = &state.current_chat_id {
                 if let Some(chat) = state.chats.get(chat_id) {
@@ -453,10 +484,26 @@ impl ChatView {
                         state.sending_message,
                     )
                 } else {
-                    (None, state.theme.clone(), state.font_size, false, String::new(), false, false)
+                    (
+                        None,
+                        state.theme.clone(),
+                        state.font_size,
+                        false,
+                        String::new(),
+                        false,
+                        false,
+                    )
                 }
             } else {
-                (None, state.theme.clone(), state.font_size, false, String::new(), false, false)
+                (
+                    None,
+                    state.theme.clone(),
+                    state.font_size,
+                    false,
+                    String::new(),
+                    false,
+                    false,
+                )
             }
         };
 
@@ -468,61 +515,75 @@ impl ChatView {
             .flex_col()
             .flex_1()
             .overflow_hidden()
-            .child(
-                if let Some(messages) = messages {
-                    // Group messages into turns (user message + responses)
-                    let turns = group_messages_into_turns(&messages);
-                    
-                    // Build turn elements
-                    let turn_elements: Vec<AnyElement> = turns.iter().enumerate().map(|(turn_idx, turn)| {
-                        self.render_turn(turn_idx, turn, &theme, font_size, editing_index, &expanded_indices, cx)
-                            .into_any_element()
-                    }).collect();
+            .child(if let Some(messages) = messages {
+                // Group messages into turns (user message + responses)
+                let turns = group_messages_into_turns(&messages);
 
-                    div()
-                        .id("messages_scroll")
-                        .flex()
-                        .flex_col()
-                        .flex_1()
-                        .pr_4()
-                        .gap_4()  // Gap between turns
-                        .track_scroll(&self.scroll_handle)
-                        .scrollable(ScrollbarAxis::Vertical)
-                        .children(turn_elements)
-                        // Streaming message
-                        .when(streaming_active && !streaming_message.is_empty(), |this| {
-                            this.child(
-                                render_streaming_message(&streaming_message, &theme, font_size, !stream_completed)
-                            )
-                        })
-                        // Status indicators
-                        .when(streaming_active && !stream_completed, |this| {
-                            this.child(
-                                div()
-                                    .flex()
-                                    .px_4()
-                                    .py_1()
-                                    .text_color(theme.text_muted)
-                                    .text_size(px(font_size - 2.0))
-                                    .child("# streaming...")
-                            )
-                        })
-                        .when(sending_message && !streaming_active, |this| {
-                            this.child(
-                                div()
-                                    .flex()
-                                    .px_4()
-                                    .py_1()
-                                    .text_color(theme.text_muted)
-                                    .text_size(px(font_size - 2.0))
-                                    .child("# waiting for response...")
-                            )
-                        })
+                // Build turn elements
+                let turn_elements: Vec<AnyElement> = turns
+                    .iter()
+                    .enumerate()
+                    .map(|(turn_idx, turn)| {
+                        self.render_turn(
+                            turn_idx,
+                            turn,
+                            &theme,
+                            font_size,
+                            editing_index,
+                            &expanded_indices,
+                            cx,
+                        )
                         .into_any_element()
-                } else {
-                    self.render_welcome_message_element(&theme, font_size).into_any_element()
-                }
-            )
+                    })
+                    .collect();
+
+                div()
+                    .id("messages_scroll")
+                    .flex()
+                    .flex_col()
+                    .flex_1()
+                    .pr_4()
+                    .gap_4() // Gap between turns
+                    .track_scroll(&self.scroll_handle)
+                    .scrollable(ScrollbarAxis::Vertical)
+                    .children(turn_elements)
+                    // Streaming message
+                    .when(streaming_active && !streaming_message.is_empty(), |this| {
+                        this.child(render_streaming_message(
+                            &streaming_message,
+                            &theme,
+                            font_size,
+                            !stream_completed,
+                        ))
+                    })
+                    // Status indicators
+                    .when(streaming_active && !stream_completed, |this| {
+                        this.child(
+                            div()
+                                .flex()
+                                .px_4()
+                                .py_1()
+                                .text_color(theme.text_muted)
+                                .text_size(px(font_size - 2.0))
+                                .child("# streaming..."),
+                        )
+                    })
+                    .when(sending_message && !streaming_active, |this| {
+                        this.child(
+                            div()
+                                .flex()
+                                .px_4()
+                                .py_1()
+                                .text_color(theme.text_muted)
+                                .text_size(px(font_size - 2.0))
+                                .child("# waiting for response..."),
+                        )
+                    })
+                    .into_any_element()
+            } else {
+                self.render_welcome_message_element(&theme, font_size)
+                    .into_any_element()
+            })
     }
 
     fn render_user_message_with_edit(
@@ -559,7 +620,7 @@ impl ChatView {
                             .text_color(theme_accent)
                             .text_size(px(font_size))
                             .font_weight(FontWeight::BOLD)
-                            .child(">")
+                            .child(">"),
                     )
                     .child(
                         div()
@@ -568,7 +629,7 @@ impl ChatView {
                             .text_color(theme_primary)
                             .text_size(px(font_size))
                             .whitespace_normal()
-                            .child(content)
+                            .child(content),
                     )
                     // Edit button
                     .child(
@@ -583,7 +644,7 @@ impl ChatView {
                             .child("[edit]")
                             .on_click(cx.listener(move |this, _, window, cx| {
                                 this.start_editing(idx, content_for_edit.clone(), window, cx);
-                            }))
+                            })),
                     )
                     // Copy button
                     .child(
@@ -596,17 +657,21 @@ impl ChatView {
                             .hover(|s| s.text_color(theme_primary))
                             .child("[copy]")
                             .on_mouse_down(MouseButton::Left, move |_, _, cx| {
-                                cx.write_to_clipboard(ClipboardItem::new_string(content_for_copy.clone()));
-                            })
-                    )
+                                cx.write_to_clipboard(ClipboardItem::new_string(
+                                    content_for_copy.clone(),
+                                ));
+                            }),
+                    ),
             )
             // Show attachments if present
             .when(has_attachments, |this| {
-                this.child(
-                    div()
-                        .pl_4()
-                        .child(crate::components::attachment_preview::render_message_attachments(&attachments, &theme_for_attachments, font_size))
-                )
+                this.child(div().pl_4().child(
+                    crate::components::attachment_preview::render_message_attachments(
+                        &attachments,
+                        &theme_for_attachments,
+                        font_size,
+                    ),
+                ))
             })
     }
 
@@ -638,7 +703,7 @@ impl ChatView {
                             .text_color(theme_accent)
                             .text_size(px(font_size))
                             .font_weight(FontWeight::BOLD)
-                            .child(">")
+                            .child(">"),
                     )
                     .child(
                         div()
@@ -649,9 +714,21 @@ impl ChatView {
                                         .cleanable(false)
                                         .appearance(false)
                                         .text_size(px(font_size))
-                                        .text_color(theme_primary)
+                                        .text_color(theme_primary),
                                 )
                             })
+                            .on_key_down(cx.listener(|this, event: &KeyDownEvent, window, cx| {
+                                // Handle Shift+Return to insert newline in edit mode
+                                if event.keystroke.key == "enter" && event.keystroke.modifiers.shift
+                                {
+                                    if let Some(input) = &this.edit_input {
+                                        input.update(cx, |input_state, cx| {
+                                            // Insert a newline at the current cursor position
+                                            input_state.insert("\n", window, cx);
+                                        });
+                                    }
+                                }
+                            })),
                     )
                     // Save button
                     .child(
@@ -664,7 +741,7 @@ impl ChatView {
                             .child("[save]")
                             .on_click(cx.listener(|this, _, window, cx| {
                                 this.save_edit_and_resubmit(window, cx);
-                            }))
+                            })),
                     )
                     // Cancel button
                     .child(
@@ -677,8 +754,8 @@ impl ChatView {
                             .child("[cancel]")
                             .on_click(cx.listener(|this, _, _, cx| {
                                 this.cancel_editing(cx);
-                            }))
-                    )
+                            })),
+                    ),
             )
             // Warning about regeneration
             .child(
@@ -687,11 +764,15 @@ impl ChatView {
                     .text_size(px(font_size - 2.0))
                     .text_color(theme_muted)
                     .italic()
-                    .child("# saving will regenerate the response")
+                    .child("# saving will regenerate the response"),
             )
     }
 
-    fn render_welcome_message_element(&self, theme: &crate::gpui_theme::GpuiTheme, font_size: f32) -> impl IntoElement {
+    fn render_welcome_message_element(
+        &self,
+        theme: &crate::gpui_theme::GpuiTheme,
+        font_size: f32,
+    ) -> impl IntoElement {
         div()
             .flex()
             .flex_col()
@@ -702,31 +783,31 @@ impl ChatView {
                 div()
                     .text_size(px(font_size))
                     .text_color(theme.text_muted)
-                    .child("# overlook v0.1.0")
+                    .child("# overlook v0.1.0"),
             )
             .child(
                 div()
                     .text_size(px(font_size))
                     .text_color(theme.text_muted)
-                    .child("#")
+                    .child("#"),
             )
             .child(
                 div()
                     .text_size(px(font_size))
                     .text_color(theme.text_muted)
-                    .child("# Select a model and start chatting,")
+                    .child("# Select a model and start chatting,"),
             )
             .child(
                 div()
                     .text_size(px(font_size))
                     .text_color(theme.text_muted)
-                    .child("# or create a new conversation from the sidebar.")
+                    .child("# or create a new conversation from the sidebar."),
             )
             .child(
                 div()
                     .text_size(px(font_size))
                     .text_color(theme.text_muted)
-                    .child("#")
+                    .child("#"),
             )
             .child(
                 div()
@@ -737,14 +818,14 @@ impl ChatView {
                             .text_size(px(font_size))
                             .text_color(theme.accent)
                             .font_weight(FontWeight::BOLD)
-                            .child(">")
+                            .child(">"),
                     )
                     .child(
                         div()
                             .text_size(px(font_size))
                             .text_color(theme.text_muted)
-                            .child("_")
-                    )
+                            .child("_"),
+                    ),
             )
     }
 }

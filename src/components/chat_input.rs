@@ -22,7 +22,7 @@ impl ChatInput {
             InputState::new(window, cx)
                 .multi_line()
                 .auto_grow(1, 10)
-                .placeholder("Type message... (click [\\n] to add line breaks)")
+                .placeholder("Type message... (Shift+Return for newline)")
         });
 
         // Subscribe to input events to handle Enter key
@@ -36,18 +36,16 @@ impl ChatInput {
         &mut self,
         _input: &Entity<InputState>,
         event: &InputEvent,
-        _window: &mut Window,
+        window: &mut Window,
         cx: &mut Context<Self>,
     ) {
         match event {
             InputEvent::PressEnter { secondary } => {
-                // In multi-line mode with InputState:
-                // - Plain Enter (secondary=false) should submit the message
-                // - Shift+Enter should insert a newline, but it doesn't fire this event
                 if !*secondary {
-                    // Only handle plain Enter for message submission
-                    self.submit_message(_window, cx);
+                    // Plain Enter submits the message
+                    self.submit_message(window, cx);
                 }
+                // Shift+Enter is handled via on_key_down handler below
             }
             _ => {}
         }
@@ -260,11 +258,10 @@ impl ChatInput {
 
     fn insert_newline(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let input_entity = self.input.clone();
-        let current_value = input_entity.read(cx).value().to_string();
-        let new_value = format!("{}\n", current_value);
         
         input_entity.update(cx, |input_state, cx| {
-            input_state.set_value(&new_value, window, cx);
+            // Insert a newline at the current cursor position
+            input_state.insert("\n", window, cx);
         });
     }
 
@@ -694,6 +691,14 @@ impl Render for ChatInput {
                                     .text_color(theme_text_primary)
                                     .line_height(px(font_size + 4.0))
                             )
+                            .on_key_down(
+                                cx.listener(|this, event: &KeyDownEvent, window, cx| {
+                                    // Handle Shift+Return to insert newline
+                                    if event.keystroke.key == "enter" && event.keystroke.modifiers.shift {
+                                        this.insert_newline(window, cx);
+                                    }
+                                })
+                            )
                     )
                     .child(
                         // Attach button (minimal)
@@ -707,20 +712,6 @@ impl Render for ChatInput {
                             .child("[attach]")
                             .on_click(cx.listener(|this, _, window, cx| {
                                 this.open_file_picker(window, cx);
-                            }))
-                    )
-                    .child(
-                        // Line break button
-                        div()
-                            .id("newline_btn")
-                            .text_size(px(font_size - 2.0))
-                            .text_color(theme_text_muted)
-                            .cursor_pointer()
-                            .hover(|s| s.text_color(theme_text_primary))
-                            .pt_2()
-                            .child("[\\n]")
-                            .on_click(cx.listener(|this, _, window, cx| {
-                                this.insert_newline(window, cx);
                             }))
                     )
                     .child(
