@@ -119,7 +119,7 @@ impl AppState {
             api_key_masked: true,
             confirm_delete_chat: Storage::load_confirm_delete_chat().unwrap_or(true),
             scroll_to_bottom: false,
-            sidebar_projects_height: 200.0, // Default height for projects section
+            sidebar_projects_height: 250.0, // Default height for projects section
 
             message_input: String::new(),
             selected_attachments: Vec::new(),

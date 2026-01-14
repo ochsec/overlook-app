@@ -10,20 +10,26 @@ use gpui_component::input::{Input, InputState};
 use gpui_component::{scroll::ScrollbarAxis, StyledExt};
 use uuid::Uuid;
 
+/// Payload for divider drag operations
+#[derive(Clone)]
+struct DividerDrag;
+
+impl Render for DividerDrag {
+    fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+        Empty
+    }
+}
+
 pub struct Sidebar {
     state: Entity<AppState>,
     new_project_input: Option<Entity<InputState>>,
     pending_delete_chat_id: Option<String>,
-    /// Whether the divider is currently being dragged
-    dragging_divider: bool,
-    /// Y position where drag started
-    drag_start_y: Pixels,
-    /// Projects height when drag started
-    drag_start_height: f32,
     /// Scroll handle for projects list
     projects_scroll: ScrollHandle,
     /// Scroll handle for chats list
     chats_scroll: ScrollHandle,
+    /// Last Y position during divider drag (for incremental updates)
+    last_drag_y: Option<Pixels>,
 }
 
 impl Sidebar {
@@ -32,35 +38,10 @@ impl Sidebar {
             state,
             new_project_input: None,
             pending_delete_chat_id: None,
-            dragging_divider: false,
-            drag_start_y: px(0.0),
-            drag_start_height: 200.0,
             projects_scroll: ScrollHandle::default(),
             chats_scroll: ScrollHandle::default(),
+            last_drag_y: None,
         }
-    }
-
-    fn start_drag(&mut self, y: Pixels, cx: &mut Context<Self>) {
-        self.dragging_divider = true;
-        self.drag_start_y = y;
-        self.drag_start_height = self.state.read(cx).sidebar_projects_height;
-        cx.notify();
-    }
-
-    fn update_drag(&mut self, y: Pixels, cx: &mut Context<Self>) {
-        if self.dragging_divider {
-            let delta = y - self.drag_start_y;
-            let delta_f32: f32 = delta.into();
-            let new_height = (self.drag_start_height + delta_f32).clamp(100.0, 500.0);
-            self.state.update(cx, |state, _| {
-                state.sidebar_projects_height = new_height;
-            });
-        }
-    }
-
-    fn end_drag(&mut self, cx: &mut Context<Self>) {
-        self.dragging_divider = false;
-        cx.notify();
     }
 
     fn ensure_input(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -122,7 +103,6 @@ impl Render for Sidebar {
         let separator_color = state.theme.separator;
         let font_size = state.font_size;
         let projects_height = state.sidebar_projects_height;
-        let is_dragging = self.dragging_divider;
 
         // Extract project modal state
         let show_project_input = state.show_project_modal;
@@ -352,7 +332,6 @@ impl Render for Sidebar {
                     .items_center()
                     .justify_center()
                     .hover(|s| s.bg(separator_color.opacity(0.5)))
-                    .when(is_dragging, |s| s.bg(separator_color.opacity(0.5)))
                     .child(
                         div()
                             .h(px(2.0))
@@ -360,14 +339,26 @@ impl Render for Sidebar {
                             .rounded_full()
                             .bg(separator_color)
                     )
-                    .on_mouse_down(MouseButton::Left, cx.listener(|this, event: &MouseDownEvent, _, cx| {
-                        this.start_drag(event.position.y, cx);
-                    }))
-                    .on_mouse_up(MouseButton::Left, cx.listener(|this, _, _, cx| {
-                        this.end_drag(cx);
-                    }))
-                    .on_mouse_move(cx.listener(|this, event: &MouseMoveEvent, _, cx| {
-                        this.update_drag(event.position.y, cx);
+                    .on_drag(DividerDrag, |drag, _, _, cx| {
+                        cx.new(|_| drag.clone())
+                    })
+                    .on_drag_move(cx.listener(|this, event: &DragMoveEvent<DividerDrag>, _, cx| {
+                        let current_y = event.event.position.y;
+
+                        if let Some(last_y) = this.last_drag_y {
+                            let delta = current_y - last_y;
+                            let delta_f32: f32 = delta.into();
+                            // Ignore large deltas (likely a new drag starting)
+                            if delta_f32.abs() < 50.0 {
+                                let current_height = this.state.read(cx).sidebar_projects_height;
+                                let new_height = (current_height + delta_f32).clamp(100.0, 500.0);
+                                this.state.update(cx, |state, _| {
+                                    state.sidebar_projects_height = new_height;
+                                });
+                            }
+                        }
+
+                        this.last_drag_y = Some(current_y);
                     }))
             )
             // Chats list
