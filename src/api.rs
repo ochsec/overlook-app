@@ -1210,6 +1210,11 @@ impl ApiClient {
 fn openai_style_messages(messages: &[Message]) -> Vec<Value> {
     messages
         .iter()
+        // Filter out "tool" role messages - they require tool_call_id which we don't track
+        // These are legacy messages from previous function calling implementation
+        .filter(|message| message.role != "tool" && message.role != "function")
+        // Also filter out empty assistant messages (artifacts from tool calling)
+        .filter(|message| !(message.role == "assistant" && message.content.trim().is_empty()))
         .map(|message| {
             // Check if message has attachments
             if message.attachments.is_empty() {
@@ -1270,6 +1275,9 @@ fn openai_style_messages(messages: &[Message]) -> Vec<Value> {
 fn ollama_style_messages(messages: &[Message]) -> Vec<Value> {
     messages
         .iter()
+        // Filter out "tool" role messages and empty assistant messages
+        .filter(|message| message.role != "tool" && message.role != "function")
+        .filter(|message| !(message.role == "assistant" && message.content.trim().is_empty()))
         .map(|message| {
             // Build content with text attachments appended
             let mut content = message.content.clone();
@@ -1308,6 +1316,14 @@ fn messages_to_prompt(messages: &[Message]) -> String {
     let mut prompt = String::new();
 
     for message in messages {
+        // Skip tool/function messages and empty assistant messages
+        if message.role == "tool" || message.role == "function" {
+            continue;
+        }
+        if message.role == "assistant" && message.content.trim().is_empty() {
+            continue;
+        }
+
         // Build content with text attachments appended
         let mut content = message.content.clone();
         for attachment in &message.attachments {
@@ -1344,6 +1360,14 @@ fn anthropic_request_body(messages: &[Message], model: &str, stream: bool) -> Va
     let mut formatted_messages = Vec::new();
 
     for message in messages {
+        // Skip tool/function messages and empty assistant messages
+        if message.role == "tool" || message.role == "function" {
+            continue;
+        }
+        if message.role == "assistant" && message.content.trim().is_empty() {
+            continue;
+        }
+
         let role = message.role.to_lowercase();
         match role.as_str() {
             "system" => {

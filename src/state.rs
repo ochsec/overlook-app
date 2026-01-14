@@ -4,7 +4,9 @@
 use crate::gpui_theme::{GpuiTheme, ThemeType};
 use crate::license::{self, LicenseData, LicenseStatus};
 use crate::storage::Storage;
-use crate::types::{Chat, ChatMap, ModelDescriptor, Project, ProjectMap, ProviderKeys, ProviderKind};
+use crate::types::{
+    Chat, ChatMap, ModelDescriptor, Project, ProjectMap, ProviderKeys, ProviderKind,
+};
 use gpui::*;
 
 #[derive(Clone, Copy, PartialEq, Debug)]
@@ -53,6 +55,8 @@ pub struct AppState {
     pub api_key_masked: bool,
     pub confirm_delete_chat: bool,
     pub scroll_to_bottom: bool,
+    /// Height of the projects section in pixels (for slideable divider)
+    pub sidebar_projects_height: f32,
 
     // Message input state
     pub message_input: String,
@@ -115,6 +119,7 @@ impl AppState {
             api_key_masked: true,
             confirm_delete_chat: Storage::load_confirm_delete_chat().unwrap_or(true),
             scroll_to_bottom: false,
+            sidebar_projects_height: 200.0, // Default height for projects section
 
             message_input: String::new(),
             selected_attachments: Vec::new(),
@@ -152,12 +157,14 @@ impl AppState {
     }
 
     pub fn get_current_chat(&self) -> Option<&Chat> {
-        self.current_chat_id.as_ref()
+        self.current_chat_id
+            .as_ref()
             .and_then(|id| self.chats.get(id))
     }
 
     pub fn get_current_project(&self) -> Option<&Project> {
-        self.current_project_id.as_ref()
+        self.current_project_id
+            .as_ref()
             .and_then(|id| self.projects.get(id))
     }
 
@@ -168,14 +175,15 @@ impl AppState {
         let query = self.model_search_query.to_lowercase();
 
         // Filter models by search query
-        let filtered: Vec<ModelDescriptor> = self.available_models
+        let filtered: Vec<ModelDescriptor> = self
+            .available_models
             .iter()
             .filter(|model| {
                 if query.is_empty() {
                     true
                 } else {
-                    model.name.to_lowercase().contains(&query) ||
-                    model.id.to_lowercase().contains(&query)
+                    model.name.to_lowercase().contains(&query)
+                        || model.id.to_lowercase().contains(&query)
                 }
             })
             .cloned()
@@ -212,7 +220,9 @@ impl AppState {
                         let mut chars = word.chars();
                         match chars.next() {
                             None => String::new(),
-                            Some(first) => first.to_uppercase().collect::<String>() + chars.as_str(),
+                            Some(first) => {
+                                first.to_uppercase().collect::<String>() + chars.as_str()
+                            }
                         }
                     })
                     .collect::<Vec<_>>()
