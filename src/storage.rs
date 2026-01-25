@@ -147,11 +147,14 @@ impl Storage {
                     if let Err(e) = Self::save_projects(&projects) {
                         eprintln!("⚠️  Failed to save migrated projects: {}", e);
                     } else {
-                        println!("✅ Successfully migrated {} folders to projects", projects.len());
+                        println!(
+                            "✅ Successfully migrated {} folders to projects",
+                            projects.len()
+                        );
                         // Backup old file
                         let _ = std::fs::rename(
                             app_dir.join("folders.json"),
-                            app_dir.join("folders.json.backup")
+                            app_dir.join("folders.json.backup"),
                         );
                     }
 
@@ -228,7 +231,8 @@ impl Storage {
     fn migrate_folders_to_projects(folders: FolderMap) -> ProjectMap {
         use chrono::Utc;
         let now = Utc::now();
-        folders.into_iter()
+        folders
+            .into_iter()
             .map(|(id, name)| {
                 let project = Project {
                     id: id.clone(),
@@ -341,7 +345,9 @@ impl Storage {
     pub fn load_favorite_models() -> Result<Vec<String>> {
         if let Some(data_dir) = dirs::config_dir() {
             let app_dir = data_dir.join("overlook");
-            if let Ok(favorites_data) = std::fs::read_to_string(app_dir.join("favorite_models.json")) {
+            if let Ok(favorites_data) =
+                std::fs::read_to_string(app_dir.join("favorite_models.json"))
+            {
                 if let Ok(favorites) = serde_json::from_str::<Vec<String>>(&favorites_data) {
                     return Ok(favorites);
                 }

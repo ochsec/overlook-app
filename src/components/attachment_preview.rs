@@ -1,9 +1,9 @@
 // Attachment Preview Component - Renders file attachments
-use gpui::*;
-use gpui::prelude::*;
-use gpui_component::button::Button;
 use crate::gpui_theme::GpuiTheme;
 use crate::types::{Attachment, AttachmentData};
+use gpui::prelude::*;
+use gpui::*;
+use gpui_component::button::Button;
 
 /// Render a single attachment preview
 pub fn render_attachment(
@@ -17,9 +17,14 @@ pub fn render_attachment(
         AttachmentData::Image { base64 } => {
             render_image_attachment(attachment, base64, theme, font_size, show_remove, on_remove)
         }
-        AttachmentData::Text { content } => {
-            render_text_attachment(attachment, content, theme, font_size, show_remove, on_remove)
-        }
+        AttachmentData::Text { content } => render_text_attachment(
+            attachment,
+            content,
+            theme,
+            font_size,
+            show_remove,
+            on_remove,
+        ),
     }
 }
 
@@ -45,16 +50,12 @@ pub fn render_attachment_chip(
         .bg(theme.surface)
         .border_1()
         .border_color(theme.border)
-        .child(
-            div()
-                .text_size(px(font_size - 2.0))
-                .child(icon)
-        )
+        .child(div().text_size(px(font_size - 2.0)).child(icon))
         .child(
             div()
                 .text_size(px(font_size - 2.0))
                 .text_color(theme.text_secondary)
-                .child(display_name)
+                .child(display_name),
         )
         .child(
             Button::new(SharedString::from(format!("remove_attachment_{}", index)))
@@ -62,7 +63,7 @@ pub fn render_attachment_chip(
                 .compact()
                 .on_click(move |_, window, app| {
                     on_remove(index, window, app);
-                })
+                }),
         )
         .into_any_element()
 }
@@ -76,10 +77,8 @@ fn render_image_attachment(
     on_remove: Option<Box<dyn Fn(&mut Window, &mut App) + 'static>>,
 ) -> AnyElement {
     // Decode base64 to check if it's valid
-    let is_valid = base64::Engine::decode(
-        &base64::engine::general_purpose::STANDARD,
-        base64_data,
-    ).is_ok();
+    let is_valid =
+        base64::Engine::decode(&base64::engine::general_purpose::STANDARD, base64_data).is_ok();
 
     let file_name = attachment.file_name.clone();
 
@@ -93,47 +92,45 @@ fn render_image_attachment(
         .border_1()
         .border_color(theme.border)
         .max_w(px(400.0))
-        .child(
-            if is_valid {
-                // For now, show a placeholder since GPUI image rendering from bytes
-                // requires specific handling. Show image icon with filename.
-                div()
-                    .flex()
-                    .flex_col()
-                    .items_center()
-                    .justify_center()
-                    .h(px(100.0))
-                    .bg(theme.background)
-                    .rounded_sm()
-                    .child(
-                        div()
-                            .text_size(px(32.0))
-                            .text_color(theme.text_muted)
-                            .child("🖼️")
-                    )
-                    .child(
-                        div()
-                            .text_size(px(font_size - 2.0))
-                            .text_color(theme.text_muted)
-                            .child("Image preview")
-                    )
-                    .into_any_element()
-            } else {
-                div()
-                    .flex()
-                    .items_center()
-                    .justify_center()
-                    .h(px(60.0))
-                    .bg(theme.background)
-                    .rounded_sm()
-                    .child(
-                        div()
-                            .text_color(theme.text_muted)
-                            .child("Invalid image data")
-                    )
-                    .into_any_element()
-            }
-        )
+        .child(if is_valid {
+            // For now, show a placeholder since GPUI image rendering from bytes
+            // requires specific handling. Show image icon with filename.
+            div()
+                .flex()
+                .flex_col()
+                .items_center()
+                .justify_center()
+                .h(px(100.0))
+                .bg(theme.background)
+                .rounded_sm()
+                .child(
+                    div()
+                        .text_size(px(32.0))
+                        .text_color(theme.text_muted)
+                        .child("🖼️"),
+                )
+                .child(
+                    div()
+                        .text_size(px(font_size - 2.0))
+                        .text_color(theme.text_muted)
+                        .child("Image preview"),
+                )
+                .into_any_element()
+        } else {
+            div()
+                .flex()
+                .items_center()
+                .justify_center()
+                .h(px(60.0))
+                .bg(theme.background)
+                .rounded_sm()
+                .child(
+                    div()
+                        .text_color(theme.text_muted)
+                        .child("Invalid image data"),
+                )
+                .into_any_element()
+        })
         .child(
             div()
                 .flex()
@@ -144,32 +141,25 @@ fn render_image_attachment(
                         .flex()
                         .items_center()
                         .gap_1()
-                        .child(
-                            div()
-                                .text_size(px(font_size - 2.0))
-                                .child("🖼️")
-                        )
+                        .child(div().text_size(px(font_size - 2.0)).child("🖼️"))
                         .child(
                             div()
                                 .text_size(px(font_size - 2.0))
                                 .text_color(theme.text_secondary)
-                                .child(truncate_filename(&file_name, 30))
-                        )
+                                .child(truncate_filename(&file_name, 30)),
+                        ),
                 )
                 .when(show_remove, |this| {
                     if let Some(callback) = on_remove {
-                        this.child(
-                            Button::new("remove_img")
-                                .label("x")
-                                .compact()
-                                .on_click(move |_, window, app| {
-                                    callback(window, app);
-                                })
-                        )
+                        this.child(Button::new("remove_img").label("x").compact().on_click(
+                            move |_, window, app| {
+                                callback(window, app);
+                            },
+                        ))
                     } else {
                         this
                     }
-                })
+                }),
         )
         .into_any_element()
 }
@@ -213,47 +203,36 @@ fn render_text_attachment(
                         .flex()
                         .items_center()
                         .gap_2()
-                        .child(
-                            div()
-                                .text_size(px(font_size))
-                                .child(icon)
-                        )
+                        .child(div().text_size(px(font_size)).child(icon))
                         .child(
                             div()
                                 .text_size(px(font_size - 1.0))
                                 .font_weight(FontWeight::MEDIUM)
                                 .text_color(theme.text_primary)
-                                .child(truncate_filename(&file_name, 30))
-                        )
+                                .child(truncate_filename(&file_name, 30)),
+                        ),
                 )
                 .when(show_remove, |this| {
                     if let Some(callback) = on_remove {
-                        this.child(
-                            Button::new("remove_text")
-                                .label("x")
-                                .compact()
-                                .on_click(move |_, window, app| {
-                                    callback(window, app);
-                                })
-                        )
+                        this.child(Button::new("remove_text").label("x").compact().on_click(
+                            move |_, window, app| {
+                                callback(window, app);
+                            },
+                        ))
                     } else {
                         this
                     }
-                })
+                }),
         )
         // Content preview
         .child(
-            div()
-                .p_2()
-                .rounded_sm()
-                .bg(theme.background)
-                .child(
-                    div()
-                        .text_size(px(font_size - 2.0))
-                        .text_color(theme.text_muted)
-                        .font_family("monospace")
-                        .child(preview)
-                )
+            div().p_2().rounded_sm().bg(theme.background).child(
+                div()
+                    .text_size(px(font_size - 2.0))
+                    .text_color(theme.text_muted)
+                    .font_family("monospace")
+                    .child(preview),
+            ),
         )
         .into_any_element()
 }
@@ -266,15 +245,31 @@ fn get_file_icon(file_name: &str) -> &'static str {
         "📄"
     } else if lower.ends_with(".txt") || lower.ends_with(".md") {
         "📝"
-    } else if lower.ends_with(".rs") || lower.ends_with(".py") || lower.ends_with(".js") ||
-              lower.ends_with(".ts") || lower.ends_with(".go") || lower.ends_with(".java") ||
-              lower.ends_with(".c") || lower.ends_with(".cpp") || lower.ends_with(".h") {
+    } else if lower.ends_with(".rs")
+        || lower.ends_with(".py")
+        || lower.ends_with(".js")
+        || lower.ends_with(".ts")
+        || lower.ends_with(".go")
+        || lower.ends_with(".java")
+        || lower.ends_with(".c")
+        || lower.ends_with(".cpp")
+        || lower.ends_with(".h")
+    {
         "💻"
-    } else if lower.ends_with(".json") || lower.ends_with(".yaml") || lower.ends_with(".yml") ||
-              lower.ends_with(".toml") || lower.ends_with(".xml") {
+    } else if lower.ends_with(".json")
+        || lower.ends_with(".yaml")
+        || lower.ends_with(".yml")
+        || lower.ends_with(".toml")
+        || lower.ends_with(".xml")
+    {
         "⚙️"
-    } else if lower.ends_with(".png") || lower.ends_with(".jpg") || lower.ends_with(".jpeg") ||
-              lower.ends_with(".gif") || lower.ends_with(".webp") || lower.ends_with(".svg") {
+    } else if lower.ends_with(".png")
+        || lower.ends_with(".jpg")
+        || lower.ends_with(".jpeg")
+        || lower.ends_with(".gif")
+        || lower.ends_with(".webp")
+        || lower.ends_with(".svg")
+    {
         "🖼️"
     } else {
         "📎"
@@ -318,9 +313,9 @@ pub fn render_message_attachments(
         .gap_2()
         .pt_2()
         .children(
-            attachments.iter().map(|attachment| {
-                render_attachment(attachment, theme, font_size, false, None)
-            })
+            attachments
+                .iter()
+                .map(|attachment| render_attachment(attachment, theme, font_size, false, None)),
         )
         .into_any_element()
 }

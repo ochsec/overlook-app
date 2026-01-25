@@ -1,11 +1,11 @@
 // Markdown Renderer - Converts markdown to GPUI elements
-use gpui::*;
-use gpui_component::StyledExt;
-use pulldown_cmark::{Parser, Event, Tag, TagEnd, CodeBlockKind, Options};
-use syntect::parsing::SyntaxSet;
-use syntect::highlighting::{ThemeSet, Style, Color as SyntectColor};
-use syntect::easy::HighlightLines;
 use crate::gpui_theme::GpuiTheme;
+use gpui::*;
+// StyledExt is used implicitly by the StyledExt trait methods
+use pulldown_cmark::{CodeBlockKind, Event, Options, Parser, Tag, TagEnd};
+use syntect::easy::HighlightLines;
+use syntect::highlighting::{Color as SyntectColor, Style, ThemeSet};
+use syntect::parsing::SyntaxSet;
 
 /// Render markdown content to GPUI elements
 pub fn render_markdown(content: &str, theme: &GpuiTheme, font_size: f32) -> AnyElement {
@@ -65,18 +65,10 @@ impl MarkdownRenderer {
 
         match &events[0] {
             Event::Start(tag) => self.process_tag(tag, &events[1..]),
-            Event::Text(text) => {
-                (Some(self.render_text(text.to_string())), 1)
-            }
-            Event::Code(code) => {
-                (Some(self.render_inline_code(code.to_string())), 1)
-            }
-            Event::SoftBreak | Event::HardBreak => {
-                (None, 1)
-            }
-            Event::Rule => {
-                (Some(self.render_horizontal_rule()), 1)
-            }
+            Event::Text(text) => (Some(self.render_text(text.to_string())), 1),
+            Event::Code(code) => (Some(self.render_inline_code(code.to_string())), 1),
+            Event::SoftBreak | Event::HardBreak => (None, 1),
+            Event::Rule => (Some(self.render_horizontal_rule()), 1),
             _ => (None, 1),
         }
     }
@@ -89,18 +81,31 @@ impl MarkdownRenderer {
             }
             Tag::Heading { level, .. } => {
                 let end_tag = match level {
-                    pulldown_cmark::HeadingLevel::H1 => TagEnd::Heading(pulldown_cmark::HeadingLevel::H1),
-                    pulldown_cmark::HeadingLevel::H2 => TagEnd::Heading(pulldown_cmark::HeadingLevel::H2),
-                    pulldown_cmark::HeadingLevel::H3 => TagEnd::Heading(pulldown_cmark::HeadingLevel::H3),
-                    pulldown_cmark::HeadingLevel::H4 => TagEnd::Heading(pulldown_cmark::HeadingLevel::H4),
-                    pulldown_cmark::HeadingLevel::H5 => TagEnd::Heading(pulldown_cmark::HeadingLevel::H5),
-                    pulldown_cmark::HeadingLevel::H6 => TagEnd::Heading(pulldown_cmark::HeadingLevel::H6),
+                    pulldown_cmark::HeadingLevel::H1 => {
+                        TagEnd::Heading(pulldown_cmark::HeadingLevel::H1)
+                    }
+                    pulldown_cmark::HeadingLevel::H2 => {
+                        TagEnd::Heading(pulldown_cmark::HeadingLevel::H2)
+                    }
+                    pulldown_cmark::HeadingLevel::H3 => {
+                        TagEnd::Heading(pulldown_cmark::HeadingLevel::H3)
+                    }
+                    pulldown_cmark::HeadingLevel::H4 => {
+                        TagEnd::Heading(pulldown_cmark::HeadingLevel::H4)
+                    }
+                    pulldown_cmark::HeadingLevel::H5 => {
+                        TagEnd::Heading(pulldown_cmark::HeadingLevel::H5)
+                    }
+                    pulldown_cmark::HeadingLevel::H6 => {
+                        TagEnd::Heading(pulldown_cmark::HeadingLevel::H6)
+                    }
                 };
                 let (content, consumed) = self.collect_until_end(remaining, end_tag);
                 (Some(self.render_heading(*level, content)), consumed + 1)
             }
             Tag::BlockQuote(_) => {
-                let (content, consumed) = self.collect_until_end(remaining, TagEnd::BlockQuote(None));
+                let (content, consumed) =
+                    self.collect_until_end(remaining, TagEnd::BlockQuote(None));
                 (Some(self.render_blockquote(content)), consumed + 1)
             }
             Tag::CodeBlock(kind) => {
@@ -109,7 +114,10 @@ impl MarkdownRenderer {
                     CodeBlockKind::Indented => None,
                 };
                 let (code_content, consumed) = self.collect_code_block(remaining);
-                (Some(self.render_code_block(&code_content, lang.as_deref())), consumed + 1)
+                (
+                    Some(self.render_code_block(&code_content, lang.as_deref())),
+                    consumed + 1,
+                )
             }
             Tag::List(start_num) => {
                 let (items, consumed) = self.collect_list_items(remaining, start_num.is_some());
@@ -129,7 +137,10 @@ impl MarkdownRenderer {
             }
             Tag::Link { dest_url, .. } => {
                 let (content, consumed) = self.collect_until_end(remaining, TagEnd::Link);
-                (Some(self.render_link(content, dest_url.to_string())), consumed + 1)
+                (
+                    Some(self.render_link(content, dest_url.to_string())),
+                    consumed + 1,
+                )
             }
             Tag::Table(_alignments) => {
                 let (table_data, consumed) = self.collect_table(remaining);
@@ -309,7 +320,7 @@ impl MarkdownRenderer {
                                 .text_color(self.theme.text_secondary)
                                 .whitespace_normal()
                                 .child(current.clone())
-                                .into_any_element()
+                                .into_any_element(),
                         );
                     }
                     current.clear();
@@ -331,7 +342,7 @@ impl MarkdownRenderer {
                         .text_color(self.theme.text_secondary)
                         .whitespace_normal()
                         .child(current)
-                        .into_any_element()
+                        .into_any_element(),
                 );
             }
         }
@@ -393,7 +404,7 @@ impl MarkdownRenderer {
                     .flex_col()
                     .font_family("monospace")
                     .text_size(px(self.font_size - 1.0))
-                    .children(highlighted)
+                    .children(highlighted),
             )
             .into_any_element()
     }
@@ -411,7 +422,10 @@ impl MarkdownRenderer {
             "base16-ocean.light"
         };
 
-        let theme = self.theme_set.themes.get(theme_name)
+        let theme = self
+            .theme_set
+            .themes
+            .get(theme_name)
             .unwrap_or_else(|| self.theme_set.themes.values().next().unwrap());
 
         let mut highlighter = HighlightLines::new(syntax, theme);
@@ -420,16 +434,12 @@ impl MarkdownRenderer {
         for line in code.lines() {
             match highlighter.highlight_line(line, &self.syntax_set) {
                 Ok(ranges) => {
-                    let line_elements: Vec<AnyElement> = ranges.iter().map(|(style, text)| {
-                        self.styled_text(text, style)
-                    }).collect();
+                    let line_elements: Vec<AnyElement> = ranges
+                        .iter()
+                        .map(|(style, text)| self.styled_text(text, style))
+                        .collect();
 
-                    lines.push(
-                        div()
-                            .flex()
-                            .children(line_elements)
-                            .into_any_element()
-                    );
+                    lines.push(div().flex().children(line_elements).into_any_element());
                 }
                 Err(_) => {
                     // Fallback to plain text
@@ -437,7 +447,7 @@ impl MarkdownRenderer {
                         div()
                             .text_color(self.theme.text_secondary)
                             .child(line.to_string())
-                            .into_any_element()
+                            .into_any_element(),
                     );
                 }
             }
@@ -475,40 +485,44 @@ impl MarkdownRenderer {
                     .text_color(self.theme.text_muted)
                     .whitespace_normal()
                     .italic()
-                    .child(content)
+                    .child(content),
             )
             .into_any_element()
     }
 
     fn render_list(&self, items: Vec<String>, start_num: Option<u64>) -> AnyElement {
-        let elements: Vec<AnyElement> = items.iter().enumerate().map(|(i, item)| {
-            let marker = if let Some(start) = start_num {
-                format!("{}. ", start + i as u64)
-            } else {
-                "• ".to_string()
-            };
+        let elements: Vec<AnyElement> = items
+            .iter()
+            .enumerate()
+            .map(|(i, item)| {
+                let marker = if let Some(start) = start_num {
+                    format!("{}. ", start + i as u64)
+                } else {
+                    "• ".to_string()
+                };
 
-            div()
-                .w_full()
-                .flex()
-                .gap_2()
-                .child(
-                    div()
-                        .text_size(px(self.font_size))
-                        .text_color(self.theme.text_muted)
-                        .child(marker)
-                )
-                .child(
-                    div()
-                        .flex_1()
-                        .min_w(px(0.0))
-                        .text_size(px(self.font_size))
-                        .text_color(self.theme.text_secondary)
-                        .whitespace_normal()
-                        .child(item.clone())
-                )
-                .into_any_element()
-        }).collect();
+                div()
+                    .w_full()
+                    .flex()
+                    .gap_2()
+                    .child(
+                        div()
+                            .text_size(px(self.font_size))
+                            .text_color(self.theme.text_muted)
+                            .child(marker),
+                    )
+                    .child(
+                        div()
+                            .flex_1()
+                            .min_w(px(0.0))
+                            .text_size(px(self.font_size))
+                            .text_color(self.theme.text_secondary)
+                            .whitespace_normal()
+                            .child(item.clone()),
+                    )
+                    .into_any_element()
+            })
+            .collect();
 
         div()
             .w_full()
@@ -595,28 +609,30 @@ impl MarkdownRenderer {
             let col_widths = col_widths.clone();
 
             // Build cells for this row
-            let cell_elements: Vec<AnyElement> = (0..num_cols).map(|i| {
-                let cell_content = row.get(i).map(|s| s.as_str()).unwrap_or("");
-                let width = col_widths.get(i).copied().unwrap_or(100.0);
+            let cell_elements: Vec<AnyElement> = (0..num_cols)
+                .map(|i| {
+                    let cell_content = row.get(i).map(|s| s.as_str()).unwrap_or("");
+                    let width = col_widths.get(i).copied().unwrap_or(100.0);
 
-                let mut cell = div()
-                    .min_w(px(width))
-                    .max_w(px(width.max(300.0))) // Cap max width
-                    .px_2()
-                    .py_1()
-                    .border_r_1()
-                    .border_color(self.theme.border)
-                    .text_size(px(self.font_size - 1.0))
-                    .text_color(self.theme.text_secondary)
-                    .overflow_hidden()
-                    .child(cell_content.to_string());
+                    let mut cell = div()
+                        .min_w(px(width))
+                        .max_w(px(width.max(300.0))) // Cap max width
+                        .px_2()
+                        .py_1()
+                        .border_r_1()
+                        .border_color(self.theme.border)
+                        .text_size(px(self.font_size - 1.0))
+                        .text_color(self.theme.text_secondary)
+                        .overflow_hidden()
+                        .child(cell_content.to_string());
 
-                if is_header {
-                    cell = cell.font_weight(FontWeight::SEMIBOLD);
-                }
+                    if is_header {
+                        cell = cell.font_weight(FontWeight::SEMIBOLD);
+                    }
 
-                cell.into_any_element()
-            }).collect();
+                    cell.into_any_element()
+                })
+                .collect();
 
             let mut row_div = div()
                 .flex()
@@ -646,7 +662,7 @@ impl MarkdownRenderer {
                     .border_1()
                     .border_color(self.theme.border)
                     .rounded_md()
-                    .children(row_elements)
+                    .children(row_elements),
             )
             .into_any_element()
     }

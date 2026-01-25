@@ -47,20 +47,25 @@ impl WebSearchTool {
             .build()
             .unwrap_or_else(|_| reqwest::Client::new());
 
-        Ok(Self { client, base_url, api_token })
+        Ok(Self {
+            client,
+            base_url,
+            api_token,
+        })
     }
 
-    pub async fn search(&self, query: &str, num_results: Option<usize>) -> Result<Vec<SearchResult>> {
+    pub async fn search(
+        &self,
+        query: &str,
+        num_results: Option<usize>,
+    ) -> Result<Vec<SearchResult>> {
         let url = format!("{}{}", self.base_url, SEARXNG_SEARCH_ENDPOINT);
 
         let response = self
             .client
             .get(&url)
             .header("X-API-Token", &self.api_token)
-            .query(&[
-                ("q", query),
-                ("format", "json"),
-            ])
+            .query(&[("q", query), ("format", "json")])
             .send()
             .await
             .map_err(|e| anyhow!("Failed to send search request: {}", e))?;
@@ -112,13 +117,20 @@ impl SearchOrchestrator {
             eprintln!("Warning: Web search not configured. Set SEARXNG_URL and SEARXNG_API_TOKEN environment variables.");
         }
 
-        Self { base_url, api_token }
+        Self {
+            base_url,
+            api_token,
+        }
     }
 
     fn create_search_tool(&self) -> Result<WebSearchTool> {
-        let base_url = self.base_url.as_ref()
+        let base_url = self
+            .base_url
+            .as_ref()
             .ok_or_else(|| anyhow!("SEARXNG_URL not configured"))?;
-        let api_token = self.api_token.as_ref()
+        let api_token = self
+            .api_token
+            .as_ref()
             .ok_or_else(|| anyhow!("SEARXNG_API_TOKEN not configured"))?;
 
         let client = reqwest::Client::builder()
@@ -136,7 +148,8 @@ impl SearchOrchestrator {
 
     /// Creates a user message that asks the LLM if it needs to search
     pub fn create_search_decision_message(user_query: &str) -> String {
-        format!(r#"You have access to web search. For the following question, decide if you need to search for current information.
+        format!(
+            r#"You have access to web search. For the following question, decide if you need to search for current information.
 
 Question: "{}"
 
@@ -148,7 +161,9 @@ Examples:
 - "inflation numbers this year" → {{"search": true, "query": "US inflation rates 2025 monthly"}}
 - "capital of France" → {{"search": false}}
 
-Your decision (JSON only):"#, user_query)
+Your decision (JSON only):"#,
+            user_query
+        )
     }
 
     /// Parses the LLM's response to extract search decision

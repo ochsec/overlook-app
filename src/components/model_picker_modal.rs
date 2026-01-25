@@ -1,13 +1,13 @@
 // Model Picker Modal Component - Model selection with categories and search
-use gpui::*;
-use gpui::prelude::*;
-use gpui_component::button::Button;
-use gpui_component::input::{InputState, Input};
-use gpui_component::{StyledExt, scroll::ScrollbarAxis};
-use std::collections::HashSet;
 use crate::state::AppState;
 use crate::storage::Storage;
 use crate::types::ModelDescriptor;
+use gpui::prelude::*;
+use gpui::*;
+use gpui_component::button::Button;
+use gpui_component::input::{Input, InputState};
+use gpui_component::{scroll::ScrollbarAxis, StyledExt};
+use std::collections::HashSet;
 
 pub struct ModelPickerModal {
     state: Entity<AppState>,
@@ -17,10 +17,7 @@ pub struct ModelPickerModal {
 
 impl ModelPickerModal {
     pub fn new(state: Entity<AppState>, window: &mut Window, cx: &mut Context<Self>) -> Self {
-        let search_input = cx.new(|cx| {
-            InputState::new(window, cx)
-                .placeholder("Search models...")
-        });
+        let search_input = cx.new(|cx| InputState::new(window, cx).placeholder("Search models..."));
         Self {
             state,
             search_input,
@@ -101,34 +98,29 @@ impl Render for ModelPickerModal {
                                     .text_lg()
                                     .font_weight(FontWeight::BOLD)
                                     .text_color(theme.text_primary)
-                                    .child("Select Model")
+                                    .child("Select Model"),
                             )
                             .child({
                                 let state_model = state_model.clone();
-                                Button::new("close_modal")
-                                    .label("X")
-                                    .compact()
-                                    .on_click(move |_, _, app| {
+                                Button::new("close_modal").label("X").compact().on_click(
+                                    move |_, _, app| {
                                         state_model.update(app, |state, _| {
                                             state.show_model_picker_modal = false;
                                             state.model_search_query.clear();
                                         });
-                                    })
-                            })
+                                    },
+                                )
+                            }),
                     )
                     // Search input
                     .child(
-                        div()
-                            .p_3()
-                            .border_b_1()
-                            .border_color(theme.border)
-                            .child(
-                                div()
-                                    .flex()
-                                    .items_center()
-                                    .gap_2()
-                                    .child(Input::new(&self.search_input).cleanable(true))
-                            )
+                        div().p_3().border_b_1().border_color(theme.border).child(
+                            div()
+                                .flex()
+                                .items_center()
+                                .gap_2()
+                                .child(Input::new(&self.search_input).cleanable(true)),
+                        ),
                     )
                     // Model count
                     .child(
@@ -137,11 +129,15 @@ impl Render for ModelPickerModal {
                             .py_2()
                             .text_sm()
                             .text_color(theme.text_muted)
-                            .child(format!("Showing {} of {} models", total_filtered, total_models))
+                            .child(format!(
+                                "Showing {} of {} models",
+                                total_filtered, total_models
+                            )),
                     )
                     // Favorites section (if any)
                     .when(!favorite_models.is_empty(), |this| {
-                        let favorites: Vec<ModelDescriptor> = state.available_models
+                        let favorites: Vec<ModelDescriptor> = state
+                            .available_models
                             .iter()
                             .filter(|m| favorite_models.contains(&m.id))
                             .cloned()
@@ -165,44 +161,45 @@ impl Render for ModelPickerModal {
                                             .text_sm()
                                             .font_weight(FontWeight::SEMIBOLD)
                                             .text_color(theme.text_secondary)
-                                            .child("Favorites")
+                                            .child("Favorites"),
                                     )
                                     .children(
-                                        favorites.into_iter().map(|model| {
-                                            let state_model = state_model.clone();
-                                            let model_id = model.id.clone();
-                                            let is_selected = current_model == model_id;
-                                            render_model_item(
-                                                model,
-                                                is_selected,
-                                                true,
-                                                state_model,
-                                                theme_clone.clone(),
-                                            ).into_any_element()
-                                        }).collect::<Vec<_>>()
-                                    )
+                                        favorites
+                                            .into_iter()
+                                            .map(|model| {
+                                                let state_model = state_model.clone();
+                                                let model_id = model.id.clone();
+                                                let is_selected = current_model == model_id;
+                                                render_model_item(
+                                                    model,
+                                                    is_selected,
+                                                    true,
+                                                    state_model,
+                                                    theme_clone.clone(),
+                                                )
+                                                .into_any_element()
+                                            })
+                                            .collect::<Vec<_>>(),
+                                    ),
                             )
                         }
                     })
                     // Categories list
                     .child(
-                        div()
-                            .flex()
-                            .flex_col()
-                            .flex_1()
-                            .overflow_hidden()
-                            .child(
-                                div()
-                                    .flex()
-                                    .flex_col()
-                                    .scrollable(ScrollbarAxis::Vertical)
-                                    .children(
-                                        categories.into_iter().map(|(category, models, expanded)| {
+                        div().flex().flex_col().flex_1().overflow_hidden().child(
+                            div()
+                                .flex()
+                                .flex_col()
+                                .scrollable(ScrollbarAxis::Vertical)
+                                .children(
+                                    categories
+                                        .into_iter()
+                                        .map(|(category, models, expanded)| {
                                             let state_model = state_model.clone();
                                             let current_model = current_model_id.clone();
                                             let theme_clone = theme.clone();
                                             let favorite_models_clone = favorite_models.clone();
-                                            let category_clone = category.clone();
+                                            let _category_clone = category.clone();
                                             let model_count = models.len();
 
                                             div()
@@ -219,40 +216,49 @@ impl Render for ModelPickerModal {
                                                         .py_1()
                                                         .cursor_pointer()
                                                         .text_color(theme.text_secondary)
-                                                        .child(
-                                                            div()
-                                                                .text_sm()
-                                                                .child(if expanded { "v" } else { ">" })
-                                                        )
+                                                        .child(div().text_sm().child(if expanded {
+                                                            "v"
+                                                        } else {
+                                                            ">"
+                                                        }))
                                                         .child(
                                                             div()
                                                                 .text_sm()
                                                                 .font_weight(FontWeight::SEMIBOLD)
-                                                                .child(format!("{} ({})", category, model_count))
-                                                        )
-                                                        // Note: Click handler for expansion would go here
-                                                        // For now, all categories are expanded by default
+                                                                .child(format!(
+                                                                    "{} ({})",
+                                                                    category, model_count
+                                                                )),
+                                                        ), // Note: Click handler for expansion would go here
+                                                           // For now, all categories are expanded by default
                                                 )
                                                 // Models in category (always shown for now)
                                                 .children(
-                                                    models.into_iter().map(|model| {
-                                                        let state_model = state_model.clone();
-                                                        let model_id = model.id.clone();
-                                                        let is_selected = current_model == model_id;
-                                                        let is_favorite = favorite_models_clone.contains(&model_id);
-                                                        render_model_item(
-                                                            model,
-                                                            is_selected,
-                                                            is_favorite,
-                                                            state_model,
-                                                            theme_clone.clone(),
-                                                        ).into_any_element()
-                                                    }).collect::<Vec<_>>()
+                                                    models
+                                                        .into_iter()
+                                                        .map(|model| {
+                                                            let state_model = state_model.clone();
+                                                            let model_id = model.id.clone();
+                                                            let is_selected =
+                                                                current_model == model_id;
+                                                            let is_favorite = favorite_models_clone
+                                                                .contains(&model_id);
+                                                            render_model_item(
+                                                                model,
+                                                                is_selected,
+                                                                is_favorite,
+                                                                state_model,
+                                                                theme_clone.clone(),
+                                                            )
+                                                            .into_any_element()
+                                                        })
+                                                        .collect::<Vec<_>>(),
                                                 )
                                                 .into_any_element()
-                                        }).collect::<Vec<_>>()
-                                    )
-                            )
+                                        })
+                                        .collect::<Vec<_>>(),
+                                ),
+                        ),
                     )
                     // Footer with cancel button
                     .child(
@@ -264,16 +270,16 @@ impl Render for ModelPickerModal {
                             .border_color(theme.border)
                             .child({
                                 let state_model = state_model.clone();
-                                Button::new("cancel_modal")
-                                    .label("Cancel")
-                                    .on_click(move |_, _, app| {
+                                Button::new("cancel_modal").label("Cancel").on_click(
+                                    move |_, _, app| {
                                         state_model.update(app, |state, _| {
                                             state.show_model_picker_modal = false;
                                             state.model_search_query.clear();
                                         });
-                                    })
-                            })
-                    )
+                                    },
+                                )
+                            }),
+                    ),
             )
     }
 }
@@ -299,23 +305,23 @@ fn render_model_item(
         .py_1()
         .rounded_md()
         .cursor_pointer()
-        .when(is_selected, |this| {
-            this.bg(theme.accent)
-        })
+        .when(is_selected, |this| this.bg(theme.accent))
         .hover(|style| style.bg(theme.button_bg))
         .child(
             // Favorite indicator
-            div()
-                .text_sm()
-                .child(if is_favorite { "*" } else { " " })
+            div().text_sm().child(if is_favorite { "*" } else { " " }),
         )
         .child(
             // Model name
             div()
                 .flex_1()
                 .text_sm()
-                .text_color(if is_selected { theme.text_primary } else { theme.text_secondary })
-                .child(model_name)
+                .text_color(if is_selected {
+                    theme.text_primary
+                } else {
+                    theme.text_secondary
+                })
+                .child(model_name),
         )
         .when(context_length.is_some(), |this| {
             this.child(
@@ -327,7 +333,7 @@ fn render_model_item(
                     .rounded_md()
                     .bg(theme.background)
                     .text_color(theme.text_muted)
-                    .child(format!("{}k", context_length.unwrap() / 1000))
+                    .child(format!("{}k", context_length.unwrap() / 1000)),
             )
         })
         .on_click({

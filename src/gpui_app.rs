@@ -1,15 +1,18 @@
 // Main GPUI Application
 // Handles view routing and global state management
 
-use gpui::*;
-use gpui::prelude::*;
-use gpui_component::button::{Button, ButtonVariants};
-use crate::api::{ApiClient, run_on_tokio_async};
-use crate::state::{AppState, ViewMode};
-use crate::components::sidebar::Sidebar;
-use crate::components::model_picker_modal::ModelPickerModal;
+use crate::api::{run_on_tokio_async, ApiClient};
 use crate::components::license_modal::LicenseModal;
-use crate::views::{chat_view::ChatView, settings_view::SettingsView, export_view::ExportView, organize_view::OrganizeView};
+use crate::components::model_picker_modal::ModelPickerModal;
+use crate::components::sidebar::Sidebar;
+use crate::state::{AppState, ViewMode};
+use crate::views::{
+    chat_view::ChatView, export_view::ExportView, mcp_settings_view::McpSettingsView,
+    organize_view::OrganizeView, settings_view::SettingsView,
+};
+use gpui::prelude::*;
+use gpui::*;
+use gpui_component::button::{Button, ButtonVariants};
 
 pub struct OverlookApp {
     state: Entity<AppState>,
@@ -24,6 +27,8 @@ pub struct OverlookApp {
     model_picker_initialized: bool,
     license_modal: Option<Entity<LicenseModal>>,
     license_modal_initialized: bool,
+    mcp_settings_view: Option<Entity<McpSettingsView>>,
+    mcp_settings_view_initialized: bool,
     models_load_started: bool,
     license_validation_started: bool,
 }
@@ -46,6 +51,8 @@ impl OverlookApp {
             model_picker_initialized: false,
             license_modal: None,
             license_modal_initialized: false,
+            mcp_settings_view: None,
+            mcp_settings_view_initialized: false,
             models_load_started: false,
             license_validation_started: false,
         }
@@ -84,7 +91,8 @@ impl OverlookApp {
                 let result = run_on_tokio_async(async move {
                     let api_client = ApiClient::new();
                     api_client.load_models(provider, &api_key).await
-                }).await;
+                })
+                .await;
 
                 cx.update(|cx| {
                     state_model.update(cx, |state, _| {
@@ -94,7 +102,9 @@ impl OverlookApp {
                                 println!("Loaded {} models on startup", models.len());
                                 state.available_models = models;
                                 // Auto-select first model if none selected
-                                if state.current_model.is_empty() && !state.available_models.is_empty() {
+                                if state.current_model.is_empty()
+                                    && !state.available_models.is_empty()
+                                {
                                     state.current_model = state.available_models[0].id.clone();
                                 }
                             }
@@ -103,9 +113,11 @@ impl OverlookApp {
                             }
                         }
                     });
-                }).ok();
+                })
+                .ok();
             }
-        }).detach();
+        })
+        .detach();
     }
 
     fn validate_license_on_startup(&mut self, cx: &mut Context<Self>) {
@@ -115,7 +127,8 @@ impl OverlookApp {
 
         let needs_validation = {
             let state = self.state.read(cx);
-            state.license_data.license_key.is_some() && state.license_data.validation_result.is_none()
+            state.license_data.license_key.is_some()
+                && state.license_data.validation_result.is_none()
         };
 
         if !needs_validation {
@@ -129,7 +142,11 @@ impl OverlookApp {
             let state = self.state.read(cx);
             (
                 state.license_data.license_key.clone().unwrap_or_default(),
-                state.license_data.hardware_id.clone().unwrap_or_else(crate::license::generate_fingerprint),
+                state
+                    .license_data
+                    .hardware_id
+                    .clone()
+                    .unwrap_or_else(crate::license::generate_fingerprint),
             )
         };
 
@@ -137,7 +154,6 @@ impl OverlookApp {
         cx.spawn({
             let state_model = state_model.clone();
             async move |_this, cx| {
-
                 let result = run_on_tokio_async({
                     let license_key = license_key.clone();
                     let hardware_id = hardware_id.clone();
@@ -145,40 +161,43 @@ impl OverlookApp {
                         let client = crate::license::LicenseClient::new();
                         client.validate(&license_key, &hardware_id).await
                     }
-                }).await;
+                })
+                .await;
 
                 cx.update(|cx| {
-                    state_model.update(cx, |state, _| {
-                        match result {
-                            Ok(validation_result) => {
-                                state.license_data.last_validation = Some(chrono::Utc::now());
-                                state.license_data.validation_result = Some(validation_result.clone());
+                    state_model.update(cx, |state, _| match result {
+                        Ok(validation_result) => {
+                            state.license_data.last_validation = Some(chrono::Utc::now());
+                            state.license_data.validation_result = Some(validation_result.clone());
 
-                                if validation_result.valid {
-                                    state.license_status = crate::license::LicenseStatus::Valid {
-                                        email: validation_result.email.unwrap_or_default(),
-                                    };
-                                    state.show_license_modal = false;
-                                } else {
-                                    state.license_status = crate::license::LicenseStatus::Invalid {
-                                        reason: validation_result.error.unwrap_or_else(|| "Invalid license".to_string()),
-                                    };
-                                }
-
-                                if let Err(e) = crate::license::save_license_data(&state.license_data) {
-                                    eprintln!("Failed to save license data: {}", e);
-                                }
+                            if validation_result.valid {
+                                state.license_status = crate::license::LicenseStatus::Valid {
+                                    email: validation_result.email.unwrap_or_default(),
+                                };
+                                state.show_license_modal = false;
+                            } else {
+                                state.license_status = crate::license::LicenseStatus::Invalid {
+                                    reason: validation_result
+                                        .error
+                                        .unwrap_or_else(|| "Invalid license".to_string()),
+                                };
                             }
-                            Err(e) => {
-                                eprintln!("License validation failed: {}", e);
+
+                            if let Err(e) = crate::license::save_license_data(&state.license_data) {
+                                eprintln!("Failed to save license data: {}", e);
                             }
                         }
+                        Err(e) => {
+                            eprintln!("License validation failed: {}", e);
+                        }
                     });
-                }).ok();
+                })
+                .ok();
 
                 Ok::<_, anyhow::Error>(())
             }
-        }).detach();
+        })
+        .detach();
     }
 
     fn ensure_chat_view(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -221,6 +240,14 @@ impl OverlookApp {
         }
     }
 
+    fn ensure_mcp_settings_view(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if !self.mcp_settings_view_initialized {
+            let state = self.state.clone();
+            self.mcp_settings_view = Some(cx.new(|cx| McpSettingsView::new(state, window, cx)));
+            self.mcp_settings_view_initialized = true;
+        }
+    }
+
     fn render_menu_bar(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
         let state_model = self.state.clone();
@@ -246,13 +273,11 @@ impl OverlookApp {
                         div()
                             .text_size(px(font_size - 2.0))
                             .text_color(state.theme.text_secondary)
-                            .child("View:")
+                            .child("View:"),
                     )
                     .child({
                         let state_model = state_model.clone();
-                        let mut btn = Button::new("nav_chat")
-                            .label("Chat")
-                            .compact();
+                        let mut btn = Button::new("nav_chat").label("Chat").compact();
                         if state.current_view == ViewMode::Chat {
                             btn = btn.primary();
                         }
@@ -264,9 +289,7 @@ impl OverlookApp {
                     })
                     .child({
                         let state_model = state_model.clone();
-                        let mut btn = Button::new("nav_settings")
-                            .label("Settings")
-                            .compact();
+                        let mut btn = Button::new("nav_settings").label("Settings").compact();
                         if state.current_view == ViewMode::Settings {
                             btn = btn.primary();
                         }
@@ -278,9 +301,7 @@ impl OverlookApp {
                     })
                     .child({
                         let state_model = state_model.clone();
-                        let mut btn = Button::new("nav_export")
-                            .label("Export")
-                            .compact();
+                        let mut btn = Button::new("nav_export").label("Export").compact();
                         if state.current_view == ViewMode::Export {
                             btn = btn.primary();
                         }
@@ -292,9 +313,7 @@ impl OverlookApp {
                     })
                     .child({
                         let state_model = state_model.clone();
-                        let mut btn = Button::new("nav_organize")
-                            .label("Organize")
-                            .compact();
+                        let mut btn = Button::new("nav_organize").label("Organize").compact();
                         if state.current_view == ViewMode::Organize {
                             btn = btn.primary();
                         }
@@ -304,13 +323,25 @@ impl OverlookApp {
                             });
                         })
                     })
+                    .child({
+                        let state_model = state_model.clone();
+                        let mut btn = Button::new("nav_mcp").label("MCP").compact();
+                        if state.current_view == ViewMode::McpSettings {
+                            btn = btn.primary();
+                        }
+                        btn.on_click(move |_, _, app| {
+                            state_model.update(app, |state, _| {
+                                state.switch_view(ViewMode::McpSettings);
+                            });
+                        })
+                    }),
             )
             // Right side - App name
             .child(
                 div()
                     .text_size(px(font_size - 2.0))
                     .text_color(state.theme.text_muted)
-                    .child("Overlook")
+                    .child("Overlook"),
             )
     }
 
@@ -320,6 +351,7 @@ impl OverlookApp {
         chat_view: Option<Entity<ChatView>>,
         settings_view: Option<Entity<SettingsView>>,
         organize_view: Option<Entity<OrganizeView>>,
+        mcp_settings_view: Option<Entity<McpSettingsView>>,
         cx: &mut Context<Self>,
     ) -> AnyElement {
         match current_view {
@@ -334,7 +366,9 @@ impl OverlookApp {
                 if let Some(settings_view) = settings_view {
                     settings_view.into_any_element()
                 } else {
-                    div().child("Settings view not initialized").into_any_element()
+                    div()
+                        .child("Settings view not initialized")
+                        .into_any_element()
                 }
             }
             ViewMode::Export => {
@@ -345,7 +379,18 @@ impl OverlookApp {
                 if let Some(organize_view) = organize_view {
                     organize_view.into_any_element()
                 } else {
-                    div().child("Organize view not initialized").into_any_element()
+                    div()
+                        .child("Organize view not initialized")
+                        .into_any_element()
+                }
+            }
+            ViewMode::McpSettings => {
+                if let Some(mcp_settings_view) = mcp_settings_view {
+                    mcp_settings_view.into_any_element()
+                } else {
+                    div()
+                        .child("MCP Settings view not initialized")
+                        .into_any_element()
                 }
             }
         }
@@ -358,6 +403,7 @@ impl Render for OverlookApp {
         self.ensure_chat_view(window, cx);
         self.ensure_settings_view(window, cx);
         self.ensure_organize_view(window, cx);
+        self.ensure_mcp_settings_view(window, cx);
         self.ensure_model_picker(window, cx);
         self.ensure_license_modal(window, cx);
 
@@ -380,6 +426,7 @@ impl Render for OverlookApp {
         let chat_view = self.chat_view.clone();
         let settings_view = self.settings_view.clone();
         let organize_view = self.organize_view.clone();
+        let mcp_settings_view = self.mcp_settings_view.clone();
         let model_picker = self.model_picker.clone();
         let license_modal = self.license_modal.clone();
 
@@ -399,16 +446,18 @@ impl Render for OverlookApp {
                     .flex_1()
                     .overflow_hidden()
                     // Only show sidebar in Chat view
-                    .when(current_view == ViewMode::Chat, |this| {
-                        this.child(sidebar)
-                    })
+                    .when(current_view == ViewMode::Chat, |this| this.child(sidebar))
                     // Main content area
-                    .child(
-                        div()
-                            .flex_1()
-                            .overflow_hidden()
-                            .child(self.render_main_content_element(current_view, chat_view, settings_view, organize_view, cx))
-                    )
+                    .child(div().flex_1().overflow_hidden().child(
+                        self.render_main_content_element(
+                            current_view,
+                            chat_view,
+                            settings_view,
+                            organize_view,
+                            mcp_settings_view,
+                            cx,
+                        ),
+                    )),
             )
             // Model picker modal overlay
             .when(show_model_picker, |this| {

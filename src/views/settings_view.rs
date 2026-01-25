@@ -1,15 +1,15 @@
 // Settings View - Application settings
-use gpui::*;
-use gpui_component::button::{Button, ButtonVariants};
-use gpui_component::input::{InputState, Input};
-use gpui_component::switch::Switch;
-use gpui_component::slider::{SliderState, Slider, SliderEvent};
-use gpui_component::menu::{DropdownMenu, PopupMenuItem};
-use gpui_component::theme::{Theme, ThemeMode};
-use gpui_component::{StyledExt, scroll::ScrollbarAxis};
 use crate::gpui_theme::{GpuiTheme, ThemeType};
 use crate::license::LicenseStatus;
 use crate::state::AppState;
+use gpui::*;
+use gpui_component::button::{Button, ButtonVariants};
+use gpui_component::input::{Input, InputState};
+use gpui_component::menu::{DropdownMenu, PopupMenuItem};
+use gpui_component::slider::{Slider, SliderEvent, SliderState};
+use gpui_component::switch::Switch;
+use gpui_component::theme::{Theme, ThemeMode};
+use gpui_component::{scroll::ScrollbarAxis, StyledExt};
 
 pub struct SettingsView {
     state: Entity<AppState>,
@@ -27,7 +27,15 @@ pub struct SettingsView {
 
 impl SettingsView {
     pub fn new(state: Entity<AppState>, window: &mut Window, cx: &mut Context<Self>) -> Self {
-        let (openrouter_key, openai_key, anthropic_key, lmstudio_url, ollama_url, font_size, license_key) = {
+        let (
+            openrouter_key,
+            openai_key,
+            anthropic_key,
+            lmstudio_url,
+            ollama_url,
+            font_size,
+            license_key,
+        ) = {
             let app_state = state.read(cx);
             (
                 app_state.api_keys.openrouter.clone(),
@@ -36,7 +44,11 @@ impl SettingsView {
                 app_state.api_keys.lmstudio_url.clone(),
                 app_state.api_keys.ollama_url.clone(),
                 app_state.font_size,
-                app_state.license_data.license_key.clone().unwrap_or_default(),
+                app_state
+                    .license_data
+                    .license_key
+                    .clone()
+                    .unwrap_or_default(),
             )
         };
 
@@ -84,8 +96,10 @@ impl SettingsView {
         });
 
         let state_clone = state.clone();
-        cx.subscribe(&font_slider, move |_this, _slider, event: &SliderEvent, cx| {
-            if let SliderEvent::Change(value) = event {
+        cx.subscribe(
+            &font_slider,
+            move |_this, _slider, event: &SliderEvent, cx| {
+                let SliderEvent::Change(value) = event;
                 let size = match value {
                     gpui_component::slider::SliderValue::Single(v) => *v,
                     gpui_component::slider::SliderValue::Range(v, _) => *v,
@@ -93,8 +107,9 @@ impl SettingsView {
                 state_clone.update(cx, |state, _| {
                     state.set_font_size(size);
                 });
-            }
-        }).detach();
+            },
+        )
+        .detach();
 
         Self {
             state,
@@ -130,17 +145,13 @@ impl SettingsView {
     }
 
     fn labeled_row(label: &str, theme: &GpuiTheme, font_size: f32) -> Div {
-        div()
-            .flex()
-            .items_center()
-            .gap_4()
-            .child(
-                div()
-                    .w(px(100.0))
-                    .text_size(px(font_size - 2.0))
-                    .text_color(theme.text_secondary)
-                    .child(label.to_string())
-            )
+        div().flex().items_center().gap_4().child(
+            div()
+                .w(px(100.0))
+                .text_size(px(font_size - 2.0))
+                .text_color(theme.text_secondary)
+                .child(label.to_string()),
+        )
     }
 
     fn toggle_row() -> Div {
@@ -150,16 +161,12 @@ impl SettingsView {
     // ============ Section Renderers ============
 
     fn render_header(&self, theme: &GpuiTheme, font_size: f32) -> impl IntoElement {
-        div()
-            .p_4()
-            .border_b_1()
-            .border_color(theme.border)
-            .child(
-                div()
-                    .text_size(px(font_size + 6.0))
-                    .font_weight(FontWeight::BOLD)
-                    .child("Settings")
-            )
+        div().p_4().border_b_1().border_color(theme.border).child(
+            div()
+                .text_size(px(font_size + 6.0))
+                .font_weight(FontWeight::BOLD)
+                .child("Settings"),
+        )
     }
 
     fn render_api_key_input(
@@ -171,7 +178,11 @@ impl SettingsView {
         font_size: f32,
     ) -> impl IntoElement {
         let input_clone = input.clone();
-        let hint = if is_url { "Local server URL" } else { "API key stored locally" };
+        let hint = if is_url {
+            "Local server URL"
+        } else {
+            "API key stored locally"
+        };
 
         div()
             .flex()
@@ -186,7 +197,7 @@ impl SettingsView {
                     .text_size(px(font_size - 2.0))
                     .font_weight(FontWeight::SEMIBOLD)
                     .text_color(theme.text_primary)
-                    .child(label.to_string())
+                    .child(label.to_string()),
             )
             .child(
                 div()
@@ -194,26 +205,24 @@ impl SettingsView {
                     .items_center()
                     .gap_2()
                     .text_size(px(font_size))
-                    .child(
-                        div().flex_1().child({
-                            let input_widget = Input::new(&input_clone).cleanable(true);
-                            if is_url { input_widget } else { input_widget.mask_toggle() }
-                        })
-                    )
+                    .child(div().flex_1().child({
+                        let input_widget = Input::new(&input_clone).cleanable(true);
+                        if is_url {
+                            input_widget
+                        } else {
+                            input_widget.mask_toggle()
+                        }
+                    })),
             )
             .child(
                 div()
                     .text_size(px(font_size - 4.0))
                     .text_color(theme.text_secondary)
-                    .child(hint)
+                    .child(hint),
             )
     }
 
-    fn render_api_keys_section(
-        &self,
-        theme: &GpuiTheme,
-        font_size: f32,
-    ) -> impl IntoElement {
+    fn render_api_keys_section(&self, theme: &GpuiTheme, font_size: f32) -> impl IntoElement {
         div()
             .flex()
             .flex_col()
@@ -228,13 +237,31 @@ impl SettingsView {
                         div()
                             .text_size(px(font_size - 2.0))
                             .text_color(theme.text_muted)
-                            .child("Keys are stored locally on this device.")
-                    )
+                            .child("Keys are stored locally on this device."),
+                    ),
             )
-            .child(self.render_api_key_input("OpenRouter", &self.openrouter_input, false, theme, font_size))
+            .child(self.render_api_key_input(
+                "OpenRouter",
+                &self.openrouter_input,
+                false,
+                theme,
+                font_size,
+            ))
             .child(self.render_api_key_input("OpenAI", &self.openai_input, false, theme, font_size))
-            .child(self.render_api_key_input("Anthropic", &self.anthropic_input, false, theme, font_size))
-            .child(self.render_api_key_input("LM Studio", &self.lmstudio_input, true, theme, font_size))
+            .child(self.render_api_key_input(
+                "Anthropic",
+                &self.anthropic_input,
+                false,
+                theme,
+                font_size,
+            ))
+            .child(self.render_api_key_input(
+                "LM Studio",
+                &self.lmstudio_input,
+                true,
+                theme,
+                font_size,
+            ))
             .child(self.render_api_key_input("Ollama", &self.ollama_input, true, theme, font_size))
     }
 
@@ -258,41 +285,40 @@ impl SettingsView {
         font_size: f32,
         current_theme_type: ThemeType,
     ) -> impl IntoElement {
-        Self::labeled_row("Theme:", theme, font_size)
-            .child({
-                let state_model = state_model.clone();
-                Button::new("theme_dropdown")
-                    .label(SharedString::from(current_theme_type.name()))
-                    .dropdown_menu(move |menu, _window, _cx| {
-                        let state_model = state_model.clone();
-                        menu.item(
-                            PopupMenuItem::new("One Light")
-                                .checked(current_theme_type == ThemeType::OneLight)
-                                .on_click({
-                                    let state_model = state_model.clone();
-                                    move |_, _, app| {
-                                        state_model.update(app, |state, _| {
-                                            state.switch_theme(ThemeType::OneLight);
-                                        });
-                                        Theme::change(ThemeMode::Light, None, app);
-                                    }
-                                }),
-                        )
-                        .item(
-                            PopupMenuItem::new("One Dark")
-                                .checked(current_theme_type == ThemeType::OneDark)
-                                .on_click({
-                                    let state_model = state_model.clone();
-                                    move |_, _, app| {
-                                        state_model.update(app, |state, _| {
-                                            state.switch_theme(ThemeType::OneDark);
-                                        });
-                                        Theme::change(ThemeMode::Dark, None, app);
-                                    }
-                                }),
-                        )
-                    })
-            })
+        Self::labeled_row("Theme:", theme, font_size).child({
+            let state_model = state_model.clone();
+            Button::new("theme_dropdown")
+                .label(SharedString::from(current_theme_type.name()))
+                .dropdown_menu(move |menu, _window, _cx| {
+                    let state_model = state_model.clone();
+                    menu.item(
+                        PopupMenuItem::new("One Light")
+                            .checked(current_theme_type == ThemeType::OneLight)
+                            .on_click({
+                                let state_model = state_model.clone();
+                                move |_, _, app| {
+                                    state_model.update(app, |state, _| {
+                                        state.switch_theme(ThemeType::OneLight);
+                                    });
+                                    Theme::change(ThemeMode::Light, None, app);
+                                }
+                            }),
+                    )
+                    .item(
+                        PopupMenuItem::new("One Dark")
+                            .checked(current_theme_type == ThemeType::OneDark)
+                            .on_click({
+                                let state_model = state_model.clone();
+                                move |_, _, app| {
+                                    state_model.update(app, |state, _| {
+                                        state.switch_theme(ThemeType::OneDark);
+                                    });
+                                    Theme::change(ThemeMode::Dark, None, app);
+                                }
+                            }),
+                    )
+                })
+        })
     }
 
     fn render_font_size_slider(&self, theme: &GpuiTheme, font_size: f32) -> impl IntoElement {
@@ -302,7 +328,7 @@ impl SettingsView {
                 div()
                     .text_size(px(font_size - 2.0))
                     .text_color(theme.text_muted)
-                    .child(format!("{:.0}pt", font_size))
+                    .child(format!("{:.0}pt", font_size)),
             )
     }
 
@@ -316,23 +342,33 @@ impl SettingsView {
     ) -> impl IntoElement {
         Self::section_container(theme)
             .child(Self::section_title("Chat Behavior", theme, font_size))
-            .child(self.render_toggle("streaming_toggle", "Enable streaming responses", streaming_enabled, {
-                let state_model = state_model.clone();
-                move |checked, _window, app| {
-                    state_model.update(app, |state, _| {
-                        state.streaming_enabled = *checked;
-                    });
-                }
-            }))
-            .child(self.render_toggle("confirm_delete_toggle", "Confirm before deleting chats", confirm_delete_chat, {
-                let state_model = state_model.clone();
-                move |checked, _window, app| {
-                    state_model.update(app, |state, _| {
-                        state.confirm_delete_chat = *checked;
-                        crate::storage::Storage::save_confirm_delete_chat(*checked).ok();
-                    });
-                }
-            }))
+            .child(self.render_toggle(
+                "streaming_toggle",
+                "Enable streaming responses",
+                streaming_enabled,
+                {
+                    let state_model = state_model.clone();
+                    move |checked, _window, app| {
+                        state_model.update(app, |state, _| {
+                            state.streaming_enabled = *checked;
+                        });
+                    }
+                },
+            ))
+            .child(self.render_toggle(
+                "confirm_delete_toggle",
+                "Confirm before deleting chats",
+                confirm_delete_chat,
+                {
+                    let state_model = state_model.clone();
+                    move |checked, _window, app| {
+                        state_model.update(app, |state, _| {
+                            state.confirm_delete_chat = *checked;
+                            crate::storage::Storage::save_confirm_delete_chat(*checked).ok();
+                        });
+                    }
+                },
+            ))
     }
 
     fn render_toggle<F>(
@@ -349,7 +385,7 @@ impl SettingsView {
             Switch::new(id)
                 .checked(checked)
                 .label(label)
-                .on_click(on_click)
+                .on_click(on_click),
         )
     }
 
@@ -368,7 +404,9 @@ impl SettingsView {
         };
         let status_text = match license_status {
             LicenseStatus::Valid { email } => format!("Licensed to {}", email),
-            LicenseStatus::Trial { days_remaining } => format!("Trial - {} days remaining", days_remaining),
+            LicenseStatus::Trial { days_remaining } => {
+                format!("Trial - {} days remaining", days_remaining)
+            }
             LicenseStatus::TrialExpired => "Trial expired".to_string(),
             LicenseStatus::Invalid { reason } => format!("Invalid: {}", reason),
         };
@@ -385,7 +423,7 @@ impl SettingsView {
                 div()
                     .text_size(px(font_size - 4.0))
                     .text_color(theme.text_muted)
-                    .child("Enter your license key and click Activate. Restart to validate.")
+                    .child("Enter your license key and click Activate. Restart to validate."),
             )
     }
 
@@ -402,7 +440,11 @@ impl SettingsView {
             .gap_2()
             .text_size(px(font_size - 2.0))
             .child(div().text_color(theme.text_secondary).child("Status:"))
-            .child(div().text_color(status_color).child(status_text.to_string()))
+            .child(
+                div()
+                    .text_color(status_color)
+                    .child(status_text.to_string()),
+            )
     }
 
     fn render_license_input(
@@ -422,39 +464,41 @@ impl SettingsView {
                 div()
                     .text_size(px(font_size - 2.0))
                     .text_color(theme.text_secondary)
-                    .child(label.to_string())
+                    .child(label.to_string()),
             )
             .child(
                 div()
                     .flex()
                     .items_center()
                     .gap_2()
-                    .child(div().flex_1().child(Input::new(&self.license_input).cleanable(true)))
                     .child(
-                        Button::new("activate_license")
-                            .label("Activate")
-                            .on_click(move |_, _, cx| {
-                                let key = license_input.read(cx).value().to_string();
-                                if !key.is_empty() {
-                                    state_model.update(cx, |state, _| {
-                                        state.license_data.license_key = Some(key);
-                                        state.license_data.validation_result = None;
-                                        state.license_key_input = String::new();
-                                        if let Err(e) = crate::license::save_license_data(&state.license_data) {
-                                            eprintln!("Failed to save license: {}", e);
-                                        }
-                                    });
-                                    println!("License key saved. Restart to validate.");
-                                }
-                            })
+                        div()
+                            .flex_1()
+                            .child(Input::new(&self.license_input).cleanable(true)),
                     )
-                    .child(
-                        Button::new("purchase_license")
-                            .label("Purchase")
-                            .on_click(|_, _, _| {
-                                let _ = open::that("https://overlook.app/#purchase");
-                            })
-                    )
+                    .child(Button::new("activate_license").label("Activate").on_click(
+                        move |_, _, cx| {
+                            let key = license_input.read(cx).value().to_string();
+                            if !key.is_empty() {
+                                state_model.update(cx, |state, _| {
+                                    state.license_data.license_key = Some(key);
+                                    state.license_data.validation_result = None;
+                                    state.license_key_input = String::new();
+                                    if let Err(e) =
+                                        crate::license::save_license_data(&state.license_data)
+                                    {
+                                        eprintln!("Failed to save license: {}", e);
+                                    }
+                                });
+                                println!("License key saved. Restart to validate.");
+                            }
+                        },
+                    ))
+                    .child(Button::new("purchase_license").label("Purchase").on_click(
+                        |_, _, _| {
+                            let _ = open::that("https://overlook.app/#purchase");
+                        },
+                    )),
             )
     }
 
@@ -465,36 +509,32 @@ impl SettingsView {
         let lmstudio_input = self.lmstudio_input.clone();
         let ollama_input = self.ollama_input.clone();
 
-        div()
-            .flex()
-            .justify_end()
-            .p_4()
-            .child(
-                Button::new("save_settings")
-                    .label("Save Settings")
-                    .primary()
-                    .on_click(move |_, _, cx| {
-                        let openrouter = openrouter_input.read(cx).value().to_string();
-                        let openai = openai_input.read(cx).value().to_string();
-                        let anthropic = anthropic_input.read(cx).value().to_string();
-                        let lmstudio = lmstudio_input.read(cx).value().to_string();
-                        let ollama = ollama_input.read(cx).value().to_string();
+        div().flex().justify_end().p_4().child(
+            Button::new("save_settings")
+                .label("Save Settings")
+                .primary()
+                .on_click(move |_, _, cx| {
+                    let openrouter = openrouter_input.read(cx).value().to_string();
+                    let openai = openai_input.read(cx).value().to_string();
+                    let anthropic = anthropic_input.read(cx).value().to_string();
+                    let lmstudio = lmstudio_input.read(cx).value().to_string();
+                    let ollama = ollama_input.read(cx).value().to_string();
 
-                        state_model.update(cx, |state, _| {
-                            state.api_keys.openrouter = openrouter;
-                            state.api_keys.openai = openai;
-                            state.api_keys.anthropic = anthropic;
-                            state.api_keys.lmstudio_url = lmstudio;
-                            state.api_keys.ollama_url = ollama;
+                    state_model.update(cx, |state, _| {
+                        state.api_keys.openrouter = openrouter;
+                        state.api_keys.openai = openai;
+                        state.api_keys.anthropic = anthropic;
+                        state.api_keys.lmstudio_url = lmstudio;
+                        state.api_keys.ollama_url = ollama;
 
-                            if let Err(e) = crate::storage::Storage::save_api_keys(&state.api_keys) {
-                                println!("Failed to save API keys: {}", e);
-                            }
-                        });
+                        if let Err(e) = crate::storage::Storage::save_api_keys(&state.api_keys) {
+                            println!("Failed to save API keys: {}", e);
+                        }
+                    });
 
-                        println!("Settings saved!");
-                    })
-            )
+                    println!("Settings saved!");
+                }),
+        )
     }
 }
 
@@ -523,24 +563,36 @@ impl Render for SettingsView {
             .text_color(theme.text_primary)
             .child(self.render_header(&theme, font_size))
             .child(
-                div()
-                    .flex()
-                    .flex_col()
-                    .flex_1()
-                    .overflow_hidden()
-                    .child(
-                        div()
-                            .flex()
-                            .flex_col()
-                            .gap_6()
-                            .p_4()
-                            .scrollable(ScrollbarAxis::Vertical)
-                            .child(self.render_api_keys_section(&theme, font_size))
-                            .child(self.render_appearance_section(state_model.clone(), &theme, font_size, current_theme_type))
-                            .child(self.render_chat_behavior_section(state_model.clone(), &theme, font_size, streaming_enabled, confirm_delete_chat))
-                            .child(self.render_license_section(state_model.clone(), &theme, font_size, &license_status, trial_expires))
-                            .child(self.render_save_button(state_model))
-                    )
+                div().flex().flex_col().flex_1().overflow_hidden().child(
+                    div()
+                        .flex()
+                        .flex_col()
+                        .gap_6()
+                        .p_4()
+                        .scrollable(ScrollbarAxis::Vertical)
+                        .child(self.render_api_keys_section(&theme, font_size))
+                        .child(self.render_appearance_section(
+                            state_model.clone(),
+                            &theme,
+                            font_size,
+                            current_theme_type,
+                        ))
+                        .child(self.render_chat_behavior_section(
+                            state_model.clone(),
+                            &theme,
+                            font_size,
+                            streaming_enabled,
+                            confirm_delete_chat,
+                        ))
+                        .child(self.render_license_section(
+                            state_model.clone(),
+                            &theme,
+                            font_size,
+                            &license_status,
+                            trial_expires,
+                        ))
+                        .child(self.render_save_button(state_model)),
+                ),
             )
     }
 }

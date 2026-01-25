@@ -1,15 +1,15 @@
 // Organize View - Project and Chat management
-use gpui::*;
-use gpui::prelude::*;
-use gpui_component::button::Button;
-use gpui_component::input::{InputState, Input};
-use gpui_component::menu::DropdownMenu;
-use gpui_component::{StyledExt, scroll::ScrollbarAxis};
-use chrono::Utc;
-use uuid::Uuid;
 use crate::state::AppState;
 use crate::storage::Storage;
 use crate::types::Project;
+use chrono::Utc;
+use gpui::prelude::*;
+use gpui::*;
+use gpui_component::button::Button;
+use gpui_component::input::{Input, InputState};
+use gpui_component::menu::DropdownMenu;
+use gpui_component::{scroll::ScrollbarAxis, StyledExt};
+use uuid::Uuid;
 
 pub struct OrganizeView {
     state: Entity<AppState>,
@@ -20,10 +20,8 @@ pub struct OrganizeView {
 
 impl OrganizeView {
     pub fn new(state: Entity<AppState>, window: &mut Window, cx: &mut Context<Self>) -> Self {
-        let new_project_input = cx.new(|cx| {
-            InputState::new(window, cx)
-                .placeholder("New project name...")
-        });
+        let new_project_input =
+            cx.new(|cx| InputState::new(window, cx).placeholder("New project name..."));
         Self {
             state,
             new_project_input,
@@ -38,7 +36,7 @@ impl Render for OrganizeView {
         let state = self.state.read(cx);
         let state_model = self.state.clone();
         let theme = state.theme.clone();
-        let font_size = state.font_size;
+        let _font_size = state.font_size;
 
         // Get all projects sorted by name
         let mut projects: Vec<_> = state.projects.values().cloned().collect();
@@ -195,7 +193,7 @@ impl Render for OrganizeView {
                                     })
                                     // "Unassigned" item
                                     .child({
-                                        let state_model = state_model.clone();
+                                        let _state_model = state_model.clone();
                                         div()
                                             .id("project_unassigned")
                                             .flex()

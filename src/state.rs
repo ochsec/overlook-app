@@ -3,11 +3,13 @@
 
 use crate::gpui_theme::{GpuiTheme, ThemeType};
 use crate::license::{self, LicenseData, LicenseStatus};
+use crate::mcp::{load_mcp_config, McpManager};
 use crate::storage::Storage;
 use crate::types::{
     Chat, ChatMap, ModelDescriptor, Project, ProjectMap, ProviderKeys, ProviderKind,
 };
 use gpui::*;
+use std::sync::Arc;
 
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub enum ViewMode {
@@ -15,6 +17,7 @@ pub enum ViewMode {
     Settings,
     Export,
     Organize,
+    McpSettings,
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -79,6 +82,9 @@ pub struct AppState {
     pub license_status: LicenseStatus,
     pub show_license_modal: bool,
     pub license_key_input: String,
+
+    // MCP state
+    pub mcp_manager: Arc<McpManager>,
 }
 
 impl AppState {
@@ -138,6 +144,8 @@ impl AppState {
             license_status,
             show_license_modal,
             license_key_input: String::new(),
+
+            mcp_manager: Arc::new(McpManager::new(load_mcp_config().unwrap_or_default())),
         }
     }
 
@@ -254,6 +262,30 @@ impl AppState {
         } else {
             "Other".to_string()
         }
+    }
+
+    /// Connect to all enabled MCP servers
+    pub fn connect_mcp_servers(&self, cx: &mut AsyncApp) {
+        let mcp_manager = self.mcp_manager.clone();
+        cx.spawn(|_: &mut gpui::AsyncApp| async move {
+            mcp_manager.set_default_search_rate_limit().await;
+            let results = mcp_manager.connect_all().await;
+            for result in results {
+                if let Err(e) = result {
+                    eprintln!("MCP Connection Error: {}", e);
+                }
+            }
+        })
+        .detach();
+    }
+
+    /// Disconnect from all MCP servers
+    pub fn disconnect_mcp_servers(&self, cx: &mut AsyncApp) {
+        let mcp_manager = self.mcp_manager.clone();
+        cx.spawn(|_: &mut gpui::AsyncApp| async move {
+            let _ = mcp_manager.disconnect_all().await;
+        })
+        .detach();
     }
 }
 

@@ -1,12 +1,12 @@
 // Chat Header Component - Provider and Model selection
-use gpui::*;
-use gpui::prelude::*;
-use gpui_component::button::Button;
-use gpui_component::menu::{DropdownMenu, PopupMenuItem};
-use crate::api::{ApiClient, run_on_tokio_async};
+use crate::api::{run_on_tokio_async, ApiClient};
 use crate::state::AppState;
 use crate::storage::Storage;
 use crate::types::ProviderKind;
+use gpui::prelude::*;
+use gpui::*;
+use gpui_component::button::Button;
+use gpui_component::menu::{DropdownMenu, PopupMenuItem};
 
 pub struct ChatHeader {
     state: Entity<AppState>,
@@ -44,7 +44,8 @@ impl Render for ChatHeader {
         } else if state.current_model.is_empty() {
             "Select a model...".to_string()
         } else {
-            state.available_models
+            state
+                .available_models
                 .iter()
                 .find(|m| m.id == state.current_model)
                 .map(|m| m.name.clone())
@@ -64,7 +65,7 @@ impl Render for ChatHeader {
                 div()
                     .text_size(px(font_size - 2.0))
                     .text_color(theme_text_secondary)
-                    .child("Provider:")
+                    .child("Provider:"),
             )
             .child({
                 // Provider dropdown
@@ -104,20 +105,30 @@ impl Render for ChatHeader {
                                                 let result = run_on_tokio_async(async move {
                                                     let api_client = ApiClient::new();
                                                     api_client.load_models(provider, &api_key).await
-                                                }).await;
+                                                })
+                                                .await;
                                                 cx.update(|cx| {
                                                     state_model.update(cx, |state, _| {
                                                         state.loading_models = false;
                                                         if let Ok(models) = result {
                                                             state.available_models = models;
-                                                            if state.current_model.is_empty() && !state.available_models.is_empty() {
-                                                                state.current_model = state.available_models[0].id.clone();
+                                                            if state.current_model.is_empty()
+                                                                && !state
+                                                                    .available_models
+                                                                    .is_empty()
+                                                            {
+                                                                state.current_model = state
+                                                                    .available_models[0]
+                                                                    .id
+                                                                    .clone();
                                                             }
                                                         }
                                                     });
-                                                }).ok();
+                                                })
+                                                .ok();
                                             }
-                                        }).detach();
+                                        })
+                                        .detach();
                                     }
                                 }),
                         )
@@ -149,20 +160,30 @@ impl Render for ChatHeader {
                                                 let result = run_on_tokio_async(async move {
                                                     let api_client = ApiClient::new();
                                                     api_client.load_models(provider, &api_key).await
-                                                }).await;
+                                                })
+                                                .await;
                                                 cx.update(|cx| {
                                                     state_model.update(cx, |state, _| {
                                                         state.loading_models = false;
                                                         if let Ok(models) = result {
                                                             state.available_models = models;
-                                                            if state.current_model.is_empty() && !state.available_models.is_empty() {
-                                                                state.current_model = state.available_models[0].id.clone();
+                                                            if state.current_model.is_empty()
+                                                                && !state
+                                                                    .available_models
+                                                                    .is_empty()
+                                                            {
+                                                                state.current_model = state
+                                                                    .available_models[0]
+                                                                    .id
+                                                                    .clone();
                                                             }
                                                         }
                                                     });
-                                                }).ok();
+                                                })
+                                                .ok();
                                             }
-                                        }).detach();
+                                        })
+                                        .detach();
                                     }
                                 }),
                         )
@@ -194,20 +215,30 @@ impl Render for ChatHeader {
                                                 let result = run_on_tokio_async(async move {
                                                     let api_client = ApiClient::new();
                                                     api_client.load_models(provider, &api_key).await
-                                                }).await;
+                                                })
+                                                .await;
                                                 cx.update(|cx| {
                                                     state_model.update(cx, |state, _| {
                                                         state.loading_models = false;
                                                         if let Ok(models) = result {
                                                             state.available_models = models;
-                                                            if state.current_model.is_empty() && !state.available_models.is_empty() {
-                                                                state.current_model = state.available_models[0].id.clone();
+                                                            if state.current_model.is_empty()
+                                                                && !state
+                                                                    .available_models
+                                                                    .is_empty()
+                                                            {
+                                                                state.current_model = state
+                                                                    .available_models[0]
+                                                                    .id
+                                                                    .clone();
                                                             }
                                                         }
                                                     });
-                                                }).ok();
+                                                })
+                                                .ok();
                                             }
-                                        }).detach();
+                                        })
+                                        .detach();
                                     }
                                 }),
                         )
@@ -239,20 +270,30 @@ impl Render for ChatHeader {
                                                 let result = run_on_tokio_async(async move {
                                                     let api_client = ApiClient::new();
                                                     api_client.load_models(provider, &api_key).await
-                                                }).await;
+                                                })
+                                                .await;
                                                 cx.update(|cx| {
                                                     state_model.update(cx, |state, _| {
                                                         state.loading_models = false;
                                                         if let Ok(models) = result {
                                                             state.available_models = models;
-                                                            if state.current_model.is_empty() && !state.available_models.is_empty() {
-                                                                state.current_model = state.available_models[0].id.clone();
+                                                            if state.current_model.is_empty()
+                                                                && !state
+                                                                    .available_models
+                                                                    .is_empty()
+                                                            {
+                                                                state.current_model = state
+                                                                    .available_models[0]
+                                                                    .id
+                                                                    .clone();
                                                             }
                                                         }
                                                     });
-                                                }).ok();
+                                                })
+                                                .ok();
                                             }
-                                        }).detach();
+                                        })
+                                        .detach();
                                     }
                                 }),
                         )
@@ -284,20 +325,30 @@ impl Render for ChatHeader {
                                                 let result = run_on_tokio_async(async move {
                                                     let api_client = ApiClient::new();
                                                     api_client.load_models(provider, &api_key).await
-                                                }).await;
+                                                })
+                                                .await;
                                                 cx.update(|cx| {
                                                     state_model.update(cx, |state, _| {
                                                         state.loading_models = false;
                                                         if let Ok(models) = result {
                                                             state.available_models = models;
-                                                            if state.current_model.is_empty() && !state.available_models.is_empty() {
-                                                                state.current_model = state.available_models[0].id.clone();
+                                                            if state.current_model.is_empty()
+                                                                && !state
+                                                                    .available_models
+                                                                    .is_empty()
+                                                            {
+                                                                state.current_model = state
+                                                                    .available_models[0]
+                                                                    .id
+                                                                    .clone();
                                                             }
                                                         }
                                                     });
-                                                }).ok();
+                                                })
+                                                .ok();
                                             }
-                                        }).detach();
+                                        })
+                                        .detach();
                                     }
                                 }),
                         )
@@ -305,14 +356,14 @@ impl Render for ChatHeader {
             })
             .child(
                 // Spacer
-                div().w(px(16.0))
+                div().w(px(16.0)),
             )
             .child(
                 // Model label
                 div()
                     .text_size(px(font_size - 2.0))
                     .text_color(theme_text_secondary)
-                    .child("Model:")
+                    .child("Model:"),
             )
             .child({
                 // Model picker button (opens modal)
@@ -332,7 +383,7 @@ impl Render for ChatHeader {
                         .text_size(px(font_size - 2.0))
                         .italic()
                         .text_color(theme_text_muted)
-                        .child("← add a key in Settings")
+                        .child("← add a key in Settings"),
                 )
             })
             .child({
@@ -359,7 +410,8 @@ impl Render for ChatHeader {
                                 let result = run_on_tokio_async(async move {
                                     let api_client = ApiClient::new();
                                     api_client.load_models(current_provider, &api_key).await
-                                }).await;
+                                })
+                                .await;
 
                                 cx.update(|cx| {
                                     state_model.update(cx, |state, _| {
@@ -369,8 +421,11 @@ impl Render for ChatHeader {
                                                 println!("Loaded {} models", models.len());
                                                 state.available_models = models;
                                                 // Auto-select first model if none selected
-                                                if state.current_model.is_empty() && !state.available_models.is_empty() {
-                                                    state.current_model = state.available_models[0].id.clone();
+                                                if state.current_model.is_empty()
+                                                    && !state.available_models.is_empty()
+                                                {
+                                                    state.current_model =
+                                                        state.available_models[0].id.clone();
                                                 }
                                             }
                                             Err(e) => {
@@ -378,9 +433,11 @@ impl Render for ChatHeader {
                                             }
                                         }
                                     });
-                                }).ok();
+                                })
+                                .ok();
                             }
-                        }).detach();
+                        })
+                        .detach();
                     })
             })
     }

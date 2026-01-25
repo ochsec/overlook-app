@@ -4,10 +4,10 @@
 mod api;
 mod attachments;
 mod export;
-mod markdown;  // New markdown renderer for GPUI
+mod markdown; // New markdown renderer for GPUI
 mod storage;
 // mod theme;  // Old egui theme - backed up as reference
-mod gpui_theme;  // New GPUI theme
+mod gpui_theme; // New GPUI theme
 mod tokens;
 mod tools;
 mod types;
@@ -15,15 +15,16 @@ mod types;
 
 // New GPUI modules
 mod components;
-mod views;
-mod state;
 mod gpui_app;
 mod license;
+mod mcp;
+mod state;
+mod views;
 
 use gpui::*;
-use gpui_component::*;
-use gpui_component::theme::{Theme, ThemeMode};
 use gpui_app::OverlookApp;
+use gpui_component::theme::{Theme, ThemeMode};
+use gpui_component::*;
 use gpui_theme::ThemeType;
 
 fn main() {

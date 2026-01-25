@@ -14,7 +14,7 @@ mod types;
 pub use client::LicenseClient;
 pub use fingerprint::generate_fingerprint;
 pub use storage::{load_license_data, save_license_data};
-pub use types::{LicenseData, LicenseStatus, ValidationResult};
+pub use types::{LicenseData, LicenseStatus};
 
 use chrono::Utc;
 
@@ -46,7 +46,7 @@ pub fn check_license_status(data: &mut LicenseData) -> LicenseStatus {
     let trial_expired = days_since_launch >= TRIAL_DAYS;
 
     // Check for valid license key
-    if let Some(ref license_key) = data.license_key {
+    if let Some(ref _license_key) = data.license_key {
         // Use cached validation if available
         if let Some(ref cached) = data.validation_result {
             if cached.valid {
@@ -55,7 +55,10 @@ pub fn check_license_status(data: &mut LicenseData) -> LicenseStatus {
                 };
             } else {
                 return LicenseStatus::Invalid {
-                    reason: cached.error.clone().unwrap_or_else(|| "Invalid license".to_string()),
+                    reason: cached
+                        .error
+                        .clone()
+                        .unwrap_or_else(|| "Invalid license".to_string()),
                 };
             }
         }
@@ -102,7 +105,9 @@ pub async fn validate_license_online(data: &mut LicenseData) -> LicenseStatus {
                 }
             } else {
                 LicenseStatus::Invalid {
-                    reason: result.error.unwrap_or_else(|| "Invalid license".to_string()),
+                    reason: result
+                        .error
+                        .unwrap_or_else(|| "Invalid license".to_string()),
                 }
             }
         }

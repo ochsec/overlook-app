@@ -16,11 +16,17 @@ pub enum LicenseStatus {
 
 impl LicenseStatus {
     pub fn is_valid(&self) -> bool {
-        matches!(self, LicenseStatus::Trial { .. } | LicenseStatus::Valid { .. })
+        matches!(
+            self,
+            LicenseStatus::Trial { .. } | LicenseStatus::Valid { .. }
+        )
     }
 
     pub fn is_expired(&self) -> bool {
-        matches!(self, LicenseStatus::TrialExpired | LicenseStatus::Invalid { .. })
+        matches!(
+            self,
+            LicenseStatus::TrialExpired | LicenseStatus::Invalid { .. }
+        )
     }
 }
 

@@ -1,15 +1,14 @@
 // Chat Input Component - Message input with attachments
-use gpui::*;
-use gpui::prelude::*;
-use gpui_component::input::{InputState, Input, InputEvent};
-use chrono::Utc;
-use std::time::Duration;
-use crate::api::{ApiClient, run_on_tokio_async, stream_chat_to_channel};
+use crate::api::{run_on_tokio_async, ApiClient};
 use crate::attachments::AttachmentProcessor;
 use crate::state::AppState;
 use crate::storage::Storage;
-use crate::tools::SearchOrchestrator;
 use crate::types::{Attachment, Chat, Message};
+use chrono::Utc;
+use gpui::prelude::*;
+use gpui::*;
+use gpui_component::input::{Input, InputEvent, InputState};
+use std::time::Duration;
 
 pub struct ChatInput {
     state: Entity<AppState>,
@@ -81,7 +80,9 @@ impl ChatInput {
                 return;
             }
             let api_key = state.api_keys.get(state.current_provider).to_string();
-            let messages = state.current_chat_id.as_ref()
+            let messages = state
+                .current_chat_id
+                .as_ref()
                 .and_then(|id| state.chats.get(id))
                 .map(|chat| chat.messages.clone())
                 .unwrap_or_default();
@@ -98,13 +99,11 @@ impl ChatInput {
         // Process attachments from file paths
         let attachments: Vec<Attachment> = attachment_paths
             .iter()
-            .filter_map(|path| {
-                match AttachmentProcessor::process_file(path) {
-                    Ok(attachment) => Some(attachment),
-                    Err(e) => {
-                        eprintln!("Failed to process attachment {}: {}", path, e);
-                        None
-                    }
+            .filter_map(|path| match AttachmentProcessor::process_file(path) {
+                Ok(attachment) => Some(attachment),
+                Err(e) => {
+                    eprintln!("Failed to process attachment {}: {}", path, e);
+                    None
                 }
             })
             .collect();
@@ -119,6 +118,8 @@ impl ChatInput {
             model: Some(model.clone()),
             search_results: None,
             title: None,
+            tool_calls: None,
+            tool_result: None,
         };
 
         // Create or update chat
@@ -130,7 +131,8 @@ impl ChatInput {
                     let now = Utc::now();
                     let new_chat = Chat {
                         id: uuid::Uuid::new_v4().to_string(),
-                        title: message_text.chars().take(30).collect::<String>() + if message_text.len() > 30 { "..." } else { "" },
+                        title: message_text.chars().take(30).collect::<String>()
+                            + if message_text.len() > 30 { "..." } else { "" },
                         messages: Vec::new(),
                         model: model.clone(),
                         provider,
@@ -176,9 +178,26 @@ impl ChatInput {
         let streaming_enabled = state_model.read(cx).streaming_enabled;
 
         if streaming_enabled {
-            Self::send_streaming_message(state_model, chat_id, model, provider, api_key, api_messages, message_text, cx);
+            Self::send_streaming_message(
+                state_model,
+                chat_id,
+                model,
+                provider,
+                api_key,
+                api_messages,
+                message_text,
+                cx,
+            );
         } else {
-            Self::send_non_streaming_message(state_model, chat_id, model, provider, api_key, api_messages, cx);
+            Self::send_non_streaming_message(
+                state_model,
+                chat_id,
+                model,
+                provider,
+                api_key,
+                api_messages,
+                cx,
+            );
         }
     }
 
@@ -213,7 +232,9 @@ impl ChatInput {
                 }
             };
 
-            let messages = state.chats.get(&chat_id)
+            let messages = state
+                .chats
+                .get(&chat_id)
                 .map(|chat| chat.messages.clone())
                 .unwrap_or_default();
 
@@ -223,7 +244,8 @@ impl ChatInput {
             }
 
             // Get the last user message for potential web search
-            let last_user_query = messages.iter()
+            let last_user_query = messages
+                .iter()
                 .rev()
                 .find(|m| m.role == "user")
                 .map(|m| m.content.clone())
@@ -250,15 +272,32 @@ impl ChatInput {
         let streaming_enabled = state_model.read(cx).streaming_enabled;
 
         if streaming_enabled {
-            Self::send_streaming_message(state_model, chat_id, model, provider, api_key, api_messages, user_query, cx);
+            Self::send_streaming_message(
+                state_model,
+                chat_id,
+                model,
+                provider,
+                api_key,
+                api_messages,
+                user_query,
+                cx,
+            );
         } else {
-            Self::send_non_streaming_message(state_model, chat_id, model, provider, api_key, api_messages, cx);
+            Self::send_non_streaming_message(
+                state_model,
+                chat_id,
+                model,
+                provider,
+                api_key,
+                api_messages,
+                cx,
+            );
         }
     }
 
     fn insert_newline(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let input_entity = self.input.clone();
-        
+
         input_entity.update(cx, |input_state, cx| {
             // Insert a newline at the current cursor position
             input_state.insert("\n", window, cx);
@@ -280,8 +319,8 @@ impl ChatInput {
                         .add_filter(
                             "All supported",
                             &[
-                                "png", "jpg", "jpeg", "gif", "webp", "bmp", "pdf", "txt", "md", "json",
-                                "xml", "csv", "log",
+                                "png", "jpg", "jpeg", "gif", "webp", "bmp", "pdf", "txt", "md",
+                                "json", "xml", "csv", "log",
                             ],
                         )
                         .pick_files()
@@ -297,7 +336,8 @@ impl ChatInput {
                             })
                             .collect::<Vec<String>>()
                     })
-                }).await;
+                })
+                .await;
 
                 // Update state with selected files
                 if let Some(paths) = file_paths {
@@ -305,10 +345,12 @@ impl ChatInput {
                         state_model.update(cx, |state, _| {
                             state.selected_attachments.extend(paths);
                         });
-                    }).ok();
+                    })
+                    .ok();
                 }
             }
-        }).detach();
+        })
+        .detach();
     }
 
     fn send_streaming_message(
@@ -318,7 +360,7 @@ impl ChatInput {
         provider: crate::types::ProviderKind,
         api_key: String,
         api_messages: Vec<Message>,
-        user_query: String,
+        _user_query: String, // Kept for signature compatibility if needed, but we now use MCP
         cx: &mut Context<Self>,
     ) {
         // Set streaming state
@@ -328,181 +370,271 @@ impl ChatInput {
             state.stream_completed = false;
         });
 
-        // Spawn task to handle search + streaming
+        // Spawn task to handle tool-enabled streaming
         let model_for_result = model.clone();
         cx.spawn({
             let state_model = state_model.clone();
             let api_key = api_key.clone();
             let model = model.clone();
             async move |_this, cx| {
-                // Check if web search is configured and perform search if needed
-                let search_orchestrator = SearchOrchestrator::new();
-                let mut final_api_messages = api_messages.clone();
+                let mut current_messages = api_messages;
+                let api_client = ApiClient::new();
 
-                // Try to perform web search if configured
-                let search_result = run_on_tokio_async({
-                    let user_query = user_query.clone();
-                    let api_key = api_key.clone();
-                    let model = model.clone();
-                    async move {
-                        // Check if search is configured
-                        if std::env::var("SEARXNG_URL").is_err() {
-                            return None;
+                loop {
+                    // Check for available tools
+                    let tools = {
+                        let state = state_model.read_with(cx, |state, _| state.mcp_manager.clone());
+                        match state {
+                            Ok(manager) => {
+                                // Check if manager has a custom get_all_tools method, if not use list_all_tools from McpManager
+                                manager
+                                    .list_all_tools()
+                                    .await
+                                    .into_iter()
+                                    .map(|(server_name, tool)| {
+                                        // Convert to a format compatible with our tools list
+                                        crate::types::Tool {
+                                            name: tool.name.to_string(),
+                                            server_name,
+                                            description: tool
+                                                .description
+                                                .unwrap_or_default()
+                                                .to_string(),
+                                            schema: Some(serde_json::Value::Object(
+                                                (*tool.input_schema).clone(),
+                                            )),
+                                        }
+                                    })
+                                    .collect::<Vec<_>>()
+                            }
+                            Err(e) => {
+                                eprintln!("Failed to get MCP manager: {}", e);
+                                Vec::new()
+                            }
+                        }
+                    };
+
+                    let (tx, rx) = std::sync::mpsc::channel();
+
+                    // Start streaming
+                    let api_client_spawn = ApiClient::new();
+                    let provider_spawn = provider;
+                    let api_key_spawn = api_key.clone();
+                    let model_spawn = model.clone();
+                    let current_messages_spawn = current_messages.clone();
+
+                    // Convert our tools to API ToolDefinition format
+                    let tool_definitions: Vec<crate::api::ToolDefinition> = tools
+                        .iter()
+                        .map(|tool| crate::api::ToolDefinition {
+                            name: tool.name.clone(),
+                            server_name: tool.server_name.clone(),
+                            description: Some(tool.description.clone()),
+                            input_schema: tool.schema.clone().unwrap_or(serde_json::Value::Null),
+                        })
+                        .collect();
+
+                    run_on_tokio_async(async move {
+                        api_client_spawn
+                            .stream_message_with_tools(
+                                provider_spawn,
+                                &api_key_spawn,
+                                &model_spawn,
+                                &current_messages_spawn,
+                                &tool_definitions,
+                                tx,
+                            )
+                            .await;
+                    })
+                    .await;
+
+                    let mut full_response = String::new();
+                    let mut pending_tool_calls: Vec<crate::types::PendingToolCall> = Vec::new();
+                    let mut had_error = false;
+
+                    // Poll the channel for events
+                    loop {
+                        match rx.try_recv() {
+                            Ok(event) => match event {
+                                crate::api::StreamEvent::Content(chunk) => {
+                                    full_response.push_str(&chunk);
+                                    let response_so_far = full_response.clone();
+                                    cx.update(|cx| {
+                                        state_model.update(cx, |state, _| {
+                                            state.streaming_message = response_so_far;
+                                        });
+                                    })
+                                    .ok();
+                                }
+                                crate::api::StreamEvent::ToolCallStart { index, id, name } => {
+                                    pending_tool_calls.push(crate::types::PendingToolCall {
+                                        index,
+                                        id,
+                                        name,
+                                        arguments: String::new(),
+                                        server_name: String::new(), // Will be filled from tools list
+                                    });
+                                }
+                                crate::api::StreamEvent::ToolCallDelta { index, arguments } => {
+                                    if let Some(tc) =
+                                        pending_tool_calls.iter_mut().find(|tc| tc.index == index)
+                                    {
+                                        tc.arguments.push_str(&arguments);
+                                    }
+                                }
+                                crate::api::StreamEvent::ToolCallEnd { .. } => {
+                                    // Handled after stream ends
+                                }
+                                crate::api::StreamEvent::Done => break,
+                                crate::api::StreamEvent::Error(e) => {
+                                    eprintln!("Streaming error: {}", e);
+                                    had_error = true;
+                                    break;
+                                }
+                            },
+                            Err(std::sync::mpsc::TryRecvError::Empty) => {
+                                smol::Timer::after(Duration::from_millis(10)).await;
+                            }
+                            Err(std::sync::mpsc::TryRecvError::Disconnected) => break,
+                        }
+                    }
+
+                    if had_error {
+                        break;
+                    }
+
+                    // If we have tool calls, execute them and continue
+                    if !pending_tool_calls.is_empty() {
+                        // Create assistant message with tool calls
+                        let mut tool_calls = Vec::new();
+                        for ptc in &pending_tool_calls {
+                            let arguments =
+                                serde_json::from_str(&ptc.arguments).unwrap_or_default();
+
+                            // Find server name for this tool
+                            let server_name = tools
+                                .iter()
+                                .find(|t| t.name == ptc.name)
+                                .map(|t| t.server_name.clone())
+                                .unwrap_or_default();
+
+                            tool_calls.push(crate::types::ToolCall {
+                                id: ptc.id.clone(),
+                                name: ptc.name.clone(),
+                                server_name,
+                                arguments: Some(arguments),
+                            });
                         }
 
-                        println!("Web search is configured, checking if search is needed...");
-
-                        // First, ask the LLM if it needs to search
-                        let decision_prompt = SearchOrchestrator::create_search_decision_message(&user_query);
-                        let decision_message = Message {
-                            role: "user".to_string(),
-                            content: decision_prompt,
-                            timestamp: Utc::now(),
-                            attachments: Vec::new(),
-                            provider: Some(provider),
-                            model: Some(model.clone()),
-                            search_results: None,
-                            title: None,
-                        };
-
-                        let api_client = ApiClient::new();
-                        match api_client.send_chat_message(
+                        let assistant_message = Message::new_assistant_with_tool_calls(
+                            full_response.clone(),
                             provider,
-                            &api_key,
-                            &model,
-                            vec![decision_message],
-                        ).await {
-                            Ok(response) => {
-                                println!("Search decision response: {}", response);
-                                match SearchOrchestrator::parse_search_decision(&response) {
-                                    Ok(decision) => {
-                                        if decision.search {
-                                            if let Some(query) = decision.query {
-                                                println!("Searching for: {}", query);
-                                                // Perform the search
-                                                match search_orchestrator.search_and_format(&query).await {
-                                                    Ok((formatted, results)) => {
-                                                        println!("Search completed successfully");
-                                                        return Some((formatted, results));
-                                                    }
-                                                    Err(e) => {
-                                                        eprintln!("Search failed: {}", e);
-                                                    }
-                                                }
-                                            }
-                                        } else {
-                                            println!("LLM decided search not needed");
-                                        }
-                                    }
-                                    Err(e) => eprintln!("Failed to parse search decision: {}", e),
+                            model_for_result.clone(),
+                            tool_calls.clone(),
+                        );
+
+                        // Add to chat and state
+                        current_messages.push(assistant_message.clone());
+                        cx.update(|cx| {
+                            state_model.update(cx, |state, _| {
+                                if let Some(chat) = state.chats.get_mut(&chat_id) {
+                                    chat.messages.push(assistant_message);
+                                }
+                                state.streaming_message.clear();
+                            });
+                        })
+                        .ok();
+
+                        // Execute tools
+                        let mut results = Vec::new();
+                        for ptc in &pending_tool_calls {
+                            let mcp_manager =
+                                state_model.read_with(cx, |state, _| state.mcp_manager.clone());
+                            let tool_name = ptc.name.clone();
+                            let arguments =
+                                serde_json::from_str(&ptc.arguments).unwrap_or_default();
+
+                            let server_name = tools
+                                .iter()
+                                .find(|t| t.name == ptc.name)
+                                .map(|t| t.server_name.clone())
+                                .unwrap_or_default();
+
+                            println!("Executing tool: {} on server: {}", tool_name, server_name);
+
+                            match match mcp_manager {
+                                Ok(manager) => {
+                                    manager.call_tool(&server_name, &tool_name, arguments).await
+                                }
+                                Err(e) => Err(anyhow::anyhow!("MCP manager not available: {}", e)),
+                            } {
+                                Ok(content) => {
+                                    results.push(crate::types::ToolResult {
+                                        tool_call_id: ptc.id.clone(),
+                                        content,
+                                        is_error: false,
+                                    });
+                                }
+                                Err(e) => {
+                                    results.push(crate::types::ToolResult {
+                                        tool_call_id: ptc.id.clone(),
+                                        content: e.to_string(),
+                                        is_error: true,
+                                    });
                                 }
                             }
-                            Err(e) => eprintln!("Failed to get search decision: {}", e),
                         }
-                        None
-                    }
-                }).await;
 
-                // If we got search results, add them as a system message
-                if let Some((search_context, search_results)) = search_result {
-                    let search_message = Message {
-                        role: "system".to_string(),
-                        content: search_context,
-                        timestamp: Utc::now(),
-                        attachments: Vec::new(),
-                        provider: Some(provider),
-                        model: Some(model.clone()),
-                        search_results: if search_results.is_empty() { None } else { Some(search_results) },
-                        title: None,
-                    };
-                    // Insert at the beginning
-                    final_api_messages.insert(0, search_message);
-                }
-
-                // Now start streaming with the (possibly augmented) messages
-                let (tx, rx) = std::sync::mpsc::channel();
-
-                // Start streaming in background thread
-                stream_chat_to_channel(
-                    provider,
-                    api_key.clone(),
-                    model.clone(),
-                    final_api_messages,
-                    tx,
-                );
-
-                let mut full_response = String::new();
-                let mut had_error = false;
-
-                // Poll the channel for chunks
-                loop {
-                    match rx.try_recv() {
-                        Ok(Ok(chunk)) => {
-                            full_response.push_str(&chunk);
-                            let response_so_far = full_response.clone();
+                        // Add tool results to messages
+                        for result in results {
+                            let result_message = Message::new_tool_result(result);
+                            current_messages.push(result_message.clone());
                             cx.update(|cx| {
                                 state_model.update(cx, |state, _| {
-                                    state.streaming_message = response_so_far;
+                                    if let Some(chat) = state.chats.get_mut(&chat_id) {
+                                        chat.messages.push(result_message);
+                                    }
                                 });
-                            }).ok();
+                            })
+                            .ok();
                         }
-                        Ok(Err(e)) => {
-                            eprintln!("Streaming error: {}", e);
-                            had_error = true;
-                            break;
-                        }
-                        Err(std::sync::mpsc::TryRecvError::Empty) => {
-                            // Wait a bit and check again
-                            smol::Timer::after(Duration::from_millis(10)).await;
-                        }
-                        Err(std::sync::mpsc::TryRecvError::Disconnected) => {
-                            // Stream finished
-                            break;
-                        }
+
+                        // Loop again to get assistant response for tool results
+                        continue;
+                    } else {
+                        // No tool calls, we're done
+                        cx.update(|cx| {
+                            state_model.update(cx, |state, _| {
+                                state.sending_message = false;
+                                state.streaming_active = false;
+                                state.stream_completed = true;
+
+                                if !full_response.is_empty() {
+                                    let assistant_message = Message::new_assistant(
+                                        full_response,
+                                        provider,
+                                        model_for_result.clone(),
+                                    );
+
+                                    if let Some(chat) = state.chats.get_mut(&chat_id) {
+                                        chat.messages.push(assistant_message);
+                                        chat.updated_at = Utc::now();
+                                    }
+
+                                    state.streaming_message.clear();
+                                    if let Err(e) = Storage::save_chats(&state.chats) {
+                                        eprintln!("Failed to save chats: {}", e);
+                                    }
+                                }
+                            });
+                        })
+                        .ok();
+                        break;
                     }
                 }
-
-                // Finalize streaming
-                let final_response = full_response;
-                cx.update(|cx| {
-                    state_model.update(cx, |state, _| {
-                        state.sending_message = false;
-                        state.streaming_active = false;
-                        state.stream_completed = true;
-
-                        if !had_error && !final_response.is_empty() {
-                            // Create assistant message from streamed content
-                            let assistant_message = Message {
-                                role: "assistant".to_string(),
-                                content: final_response,
-                                timestamp: Utc::now(),
-                                attachments: Vec::new(),
-                                provider: Some(provider),
-                                model: Some(model_for_result.clone()),
-                                search_results: None,
-                                title: None,
-                            };
-
-                            // Add to chat
-                            if let Some(chat) = state.chats.get_mut(&chat_id) {
-                                chat.messages.push(assistant_message);
-                                chat.updated_at = Utc::now();
-                            }
-
-                            // Clear streaming message
-                            state.streaming_message.clear();
-
-                            // Save chats to disk
-                            if let Err(e) = Storage::save_chats(&state.chats) {
-                                eprintln!("Failed to save chats: {}", e);
-                            }
-
-                            println!("Streaming completed successfully");
-                        }
-                    });
-                }).ok();
             }
-        }).detach();
+        })
+        .detach();
     }
 
     fn send_non_streaming_message(
@@ -521,13 +653,11 @@ impl ChatInput {
                 // Run reqwest on Tokio runtime (GPUI uses smol)
                 let result = run_on_tokio_async(async move {
                     let api_client = ApiClient::new();
-                    api_client.send_chat_message(
-                        provider,
-                        &api_key,
-                        &model,
-                        api_messages,
-                    ).await
-                }).await;
+                    api_client
+                        .send_chat_message(provider, &api_key, &model, api_messages)
+                        .await
+                })
+                .await;
 
                 cx.update(|cx| {
                     state_model.update(cx, |state, _| {
@@ -545,6 +675,8 @@ impl ChatInput {
                                     model: Some(model_for_result.clone()),
                                     search_results: None,
                                     title: None,
+                                    tool_calls: None,
+                                    tool_result: None,
                                 };
 
                                 // Add to chat
@@ -565,9 +697,11 @@ impl ChatInput {
                             }
                         }
                     });
-                }).ok();
+                })
+                .ok();
             }
-        }).detach();
+        })
+        .detach();
     }
 }
 
@@ -576,7 +710,8 @@ impl Render for ChatInput {
         let state = self.state.read(cx);
         let state_model = self.state.clone();
 
-        let is_sending = state.sending_message || (state.streaming_active && !state.stream_completed);
+        let is_sending =
+            state.sending_message || (state.streaming_active && !state.stream_completed);
         let send_label = if state.streaming_active && !state.stream_completed {
             "[streaming]"
         } else if state.sending_message {
@@ -594,7 +729,9 @@ impl Render for ChatInput {
         let font_size = state.font_size;
 
         // Extract attachment info
-        let attachments: Vec<_> = state.selected_attachments.iter()
+        let attachments: Vec<_> = state
+            .selected_attachments
+            .iter()
             .enumerate()
             .map(|(i, path)| {
                 let file_name = std::path::Path::new(path)
@@ -619,12 +756,10 @@ impl Render for ChatInput {
             // Attachments preview (if any)
             .when(has_attachments, |this| {
                 this.child(
-                    div()
-                        .flex()
-                        .gap_2()
-                        .flex_wrap()
-                        .children(
-                            attachments.iter().map(|(i, file_name)| {
+                    div().flex().gap_2().flex_wrap().children(
+                        attachments
+                            .iter()
+                            .map(|(i, file_name)| {
                                 let idx = *i;
                                 let state_model = state_model.clone();
                                 div()
@@ -635,7 +770,7 @@ impl Render for ChatInput {
                                         div()
                                             .text_size(px(font_size - 2.0))
                                             .text_color(theme_text_muted)
-                                            .child(format!("# attached: {}", file_name))
+                                            .child(format!("# attached: {}", file_name)),
                                     )
                                     .child(
                                         div()
@@ -650,11 +785,12 @@ impl Render for ChatInput {
                                                         state.selected_attachments.remove(idx);
                                                     }
                                                 });
-                                            })
+                                            }),
                                     )
                                     .into_any_element()
-                            }).collect::<Vec<_>>()
-                        )
+                            })
+                            .collect::<Vec<_>>(),
+                    ),
                 )
             })
             // Input row with terminal prompt style
@@ -670,7 +806,7 @@ impl Render for ChatInput {
                             .text_color(theme_accent)
                             .font_weight(FontWeight::BOLD)
                             .pt_2()
-                            .child(">")
+                            .child(">"),
                     )
                     .child(
                         // Text input area - textarea style with border
@@ -689,16 +825,15 @@ impl Render for ChatInput {
                                     .appearance(false)
                                     .text_size(px(font_size))
                                     .text_color(theme_text_primary)
-                                    .line_height(px(font_size + 4.0))
+                                    .line_height(px(font_size + 4.0)),
                             )
-                            .on_key_down(
-                                cx.listener(|this, event: &KeyDownEvent, window, cx| {
-                                    // Handle Shift+Return to insert newline
-                                    if event.keystroke.key == "enter" && event.keystroke.modifiers.shift {
-                                        this.insert_newline(window, cx);
-                                    }
-                                })
-                            )
+                            .on_key_down(cx.listener(|this, event: &KeyDownEvent, window, cx| {
+                                // Handle Shift+Return to insert newline
+                                if event.keystroke.key == "enter" && event.keystroke.modifiers.shift
+                                {
+                                    this.insert_newline(window, cx);
+                                }
+                            })),
                     )
                     .child(
                         // Attach button (minimal)
@@ -712,24 +847,30 @@ impl Render for ChatInput {
                             .child("[attach]")
                             .on_click(cx.listener(|this, _, window, cx| {
                                 this.open_file_picker(window, cx);
-                            }))
+                            })),
                     )
                     .child(
                         // Send button (minimal text style)
                         div()
                             .id("send_btn")
                             .text_size(px(font_size - 2.0))
-                            .text_color(if is_sending { theme_text_muted } else { theme_text_primary })
+                            .text_color(if is_sending {
+                                theme_text_muted
+                            } else {
+                                theme_text_primary
+                            })
                             .cursor_pointer()
-                            .when(!is_sending, |this| this.hover(|s| s.text_color(theme_accent)))
+                            .when(!is_sending, |this| {
+                                this.hover(|s| s.text_color(theme_accent))
+                            })
                             .pt_2()
                             .child(send_label)
                             .when(!is_sending, |this| {
                                 this.on_click(cx.listener(|this, _, window, cx| {
                                     this.submit_message(window, cx);
                                 }))
-                            })
-                    )
+                            }),
+                    ),
             )
     }
 }

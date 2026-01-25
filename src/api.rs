@@ -2,7 +2,7 @@ use crate::types::{AttachmentData, Message, ModelDescriptor, ModelsResponse, Pro
 use anyhow::{anyhow, Result};
 use eventsource_stream::Eventsource;
 use futures_util::{stream::BoxStream, StreamExt};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::sync::OnceLock;
 use std::time::Duration;
@@ -10,13 +10,444 @@ use tokio::runtime::Runtime;
 use tokio_retry::strategy::{jitter, ExponentialBackoff};
 use tokio_retry::Retry;
 
-// Global Tokio runtime for API calls (GPUI uses smol, but reqwest needs Tokio)
+/// Represents a tool definition that can be passed to the API
+#[derive(Clone, Debug)]
+pub struct ToolDefinition {
+    pub name: String,
+    pub server_name: String,
+    pub description: Option<String>,
+    pub input_schema: Value,
+}
+
+/// Events that can be received during streaming
+#[derive(Debug, Clone)]
+pub enum StreamEvent {
+    /// Text content chunk
+    Content(String),
+    /// A tool call is being made
+    ToolCallStart {
+        index: usize,
+        id: String,
+        name: String,
+    },
+    /// Arguments chunk for a tool call
+    ToolCallDelta { index: usize, arguments: String },
+    /// Tool call completed
+    ToolCallEnd {
+        #[allow(dead_code)]
+        index: usize,
+    },
+    /// Stream finished
+    Done,
+    /// Error occurred
+    Error(String),
+}
+
+// =============================================================================
+// Internal API types for tool use and multimodal content
+// =============================================================================
+
+#[derive(Serialize)]
+struct OpenAIChatRequest {
+    model: String,
+    messages: Vec<OpenAIMessage>,
+    stream: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    tools: Option<Vec<OpenAITool>>,
+}
+
+#[derive(Serialize, Clone)]
+struct OpenAITool {
+    #[serde(rename = "type")]
+    tool_type: String,
+    function: OpenAIFunction,
+}
+
+#[derive(Serialize, Clone)]
+struct OpenAIFunction {
+    name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    description: Option<String>,
+    parameters: Value,
+}
+
+#[derive(Serialize)]
+struct OpenAIMessage {
+    role: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    content: Option<OpenAIContent>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    tool_calls: Option<Vec<OpenAIToolCall>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    tool_call_id: Option<String>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+struct OpenAIToolCall {
+    id: String,
+    #[serde(rename = "type")]
+    call_type: String,
+    function: OpenAIFunctionCall,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+struct OpenAIFunctionCall {
+    name: String,
+    arguments: String,
+}
+
+#[derive(Serialize)]
+#[serde(untagged)]
+enum OpenAIContent {
+    Text(String),
+    Parts(Vec<OpenAIContentPart>),
+}
+
+#[derive(Serialize)]
+#[serde(tag = "type")]
+enum OpenAIContentPart {
+    #[serde(rename = "text")]
+    Text { text: String },
+    #[serde(rename = "image_url")]
+    ImageUrl { image_url: OpenAIImageUrl },
+}
+
+#[derive(Serialize)]
+struct OpenAIImageUrl {
+    url: String,
+}
+
+#[derive(Serialize)]
+struct AnthropicRequest {
+    model: String,
+    messages: Vec<AnthropicMessage>,
+    max_tokens: u32,
+    stream: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    tools: Option<Vec<AnthropicTool>>,
+}
+
+#[derive(Serialize, Clone)]
+struct AnthropicTool {
+    name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    description: Option<String>,
+    input_schema: Value,
+}
+
+#[derive(Serialize)]
+struct AnthropicMessage {
+    role: String,
+    content: AnthropicContent,
+}
+
+#[derive(Serialize)]
+#[serde(untagged)]
+enum AnthropicContent {
+    Text(String),
+    Parts(Vec<AnthropicContentPart>),
+}
+
+#[derive(Serialize)]
+#[serde(tag = "type")]
+enum AnthropicContentPart {
+    #[serde(rename = "text")]
+    Text { text: String },
+    #[serde(rename = "image")]
+    Image { source: AnthropicImageSource },
+    #[serde(rename = "tool_use")]
+    ToolUse {
+        id: String,
+        name: String,
+        input: Value,
+    },
+    #[serde(rename = "tool_result")]
+    ToolResult {
+        tool_use_id: String,
+        content: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        is_error: Option<bool>,
+    },
+}
+
+#[derive(Serialize)]
+struct AnthropicImageSource {
+    #[serde(rename = "type")]
+    source_type: String,
+    media_type: String,
+    data: String,
+}
+
+#[derive(Deserialize, Debug)]
+struct StreamChunk {
+    choices: Vec<StreamChoice>,
+}
+
+#[derive(Deserialize, Debug)]
+struct StreamChoice {
+    delta: StreamDelta,
+    #[serde(default)]
+    finish_reason: Option<String>,
+}
+
+#[derive(Deserialize, Debug)]
+struct StreamDelta {
+    content: Option<String>,
+    #[serde(default)]
+    tool_calls: Option<Vec<StreamToolCall>>,
+}
+
+#[derive(Deserialize, Debug, Clone)]
+struct StreamToolCall {
+    index: usize,
+    #[serde(default)]
+    id: Option<String>,
+    #[serde(default)]
+    function: Option<StreamFunctionCall>,
+}
+
+#[derive(Deserialize, Debug, Clone)]
+struct StreamFunctionCall {
+    #[serde(default)]
+    name: Option<String>,
+    #[serde(default)]
+    arguments: Option<String>,
+}
+
+#[derive(Deserialize, Debug)]
+struct AnthropicStreamEvent {
+    #[serde(rename = "type")]
+    event_type: String,
+    #[serde(default)]
+    index: Option<usize>,
+    #[serde(default)]
+    delta: Option<AnthropicDelta>,
+    #[serde(default)]
+    content_block: Option<AnthropicContentBlock>,
+}
+
+#[derive(Deserialize, Debug)]
+struct AnthropicDelta {
+    #[serde(default)]
+    text: Option<String>,
+    #[serde(rename = "type", default)]
+    delta_type: Option<String>,
+    #[serde(default)]
+    partial_json: Option<String>,
+}
+
+#[derive(Deserialize, Debug, Clone)]
+struct AnthropicContentBlock {
+    #[serde(rename = "type")]
+    block_type: String,
+    #[serde(default)]
+    id: Option<String>,
+    #[serde(default)]
+    name: Option<String>,
+}
+
+// =============================================================================
+// Message conversion functions
+// =============================================================================
+
+fn build_openai_messages(messages: &[Message]) -> Vec<OpenAIMessage> {
+    messages
+        .iter()
+        .map(|msg| {
+            if msg.role == "tool" {
+                if let Some(ref tool_result) = msg.tool_result {
+                    return OpenAIMessage {
+                        role: "tool".to_string(),
+                        content: Some(OpenAIContent::Text(tool_result.content.clone())),
+                        tool_calls: None,
+                        tool_call_id: Some(tool_result.tool_call_id.clone()),
+                    };
+                }
+            }
+
+            let mut text_content = msg.content.clone();
+            let mut image_parts: Vec<OpenAIContentPart> = Vec::new();
+
+            for attachment in &msg.attachments {
+                match &attachment.data {
+                    AttachmentData::Text { content } => {
+                        text_content.push_str(&format!(
+                            "\n\n--- {} ---\n{}",
+                            attachment.file_name, content
+                        ));
+                    }
+                    AttachmentData::Image { base64 } => {
+                        image_parts.push(OpenAIContentPart::ImageUrl {
+                            image_url: OpenAIImageUrl {
+                                url: format!("data:{};base64,{}", attachment.mime_type, base64),
+                            },
+                        });
+                    }
+                }
+            }
+
+            let content = if image_parts.is_empty() {
+                OpenAIContent::Text(text_content)
+            } else {
+                let mut parts = vec![OpenAIContentPart::Text { text: text_content }];
+                parts.extend(image_parts);
+                OpenAIContent::Parts(parts)
+            };
+
+            let tool_calls = if let Some(ref tcs) = msg.tool_calls {
+                if tcs.is_empty() {
+                    None
+                } else {
+                    Some(
+                        tcs.iter()
+                            .map(|tc| OpenAIToolCall {
+                                id: tc.id.clone(),
+                                call_type: "function".to_string(),
+                                function: OpenAIFunctionCall {
+                                    name: tc.name.clone(),
+                                    arguments: tc
+                                        .arguments
+                                        .as_ref()
+                                        .map(|a| serde_json::to_string(a).unwrap_or_default())
+                                        .unwrap_or_default(),
+                                },
+                            })
+                            .collect(),
+                    )
+                }
+            } else {
+                None
+            };
+
+            OpenAIMessage {
+                role: msg.role.clone(),
+                content: Some(content),
+                tool_calls,
+                tool_call_id: None,
+            }
+        })
+        .collect()
+}
+
+fn build_openai_tools(tools: &[ToolDefinition]) -> Vec<OpenAITool> {
+    tools
+        .iter()
+        .map(|tool| OpenAITool {
+            tool_type: "function".to_string(),
+            function: OpenAIFunction {
+                name: tool.name.clone(),
+                description: tool.description.clone(),
+                parameters: tool.input_schema.clone(),
+            },
+        })
+        .collect()
+}
+
+fn build_anthropic_messages(messages: &[Message]) -> Vec<AnthropicMessage> {
+    let mut result = Vec::new();
+
+    for msg in messages {
+        if msg.role == "tool" {
+            if let Some(ref tool_result) = msg.tool_result {
+                let content = AnthropicContent::Parts(vec![AnthropicContentPart::ToolResult {
+                    tool_use_id: tool_result.tool_call_id.clone(),
+                    content: tool_result.content.clone(),
+                    is_error: if tool_result.is_error {
+                        Some(true)
+                    } else {
+                        None
+                    },
+                }]);
+                result.push(AnthropicMessage {
+                    role: "user".to_string(),
+                    content,
+                });
+                continue;
+            }
+        }
+
+        let mut text_content = msg.content.clone();
+        let mut image_parts: Vec<AnthropicContentPart> = Vec::new();
+
+        for attachment in &msg.attachments {
+            match &attachment.data {
+                AttachmentData::Text { content } => {
+                    text_content.push_str(&format!(
+                        "\n\n--- {} ---\n{}",
+                        attachment.file_name, content
+                    ));
+                }
+                AttachmentData::Image { base64 } => {
+                    image_parts.push(AnthropicContentPart::Image {
+                        source: AnthropicImageSource {
+                            source_type: "base64".to_string(),
+                            media_type: attachment.mime_type.clone(),
+                            data: base64.clone(),
+                        },
+                    });
+                }
+            }
+        }
+
+        let mut content_parts: Vec<AnthropicContentPart> = Vec::new();
+
+        if !text_content.is_empty() {
+            content_parts.push(AnthropicContentPart::Text { text: text_content });
+        }
+
+        content_parts.extend(image_parts);
+
+        if msg.role == "assistant" {
+            if let Some(ref tool_calls) = msg.tool_calls {
+                for tool_call in tool_calls {
+                    content_parts.push(AnthropicContentPart::ToolUse {
+                        id: tool_call.id.clone(),
+                        name: tool_call.name.clone(),
+                        input: tool_call
+                            .arguments
+                            .as_ref()
+                            .map(|a| Value::Object(a.clone()))
+                            .unwrap_or(Value::Object(serde_json::Map::new())),
+                    });
+                }
+            }
+        }
+
+        let content = if content_parts.len() == 1 {
+            if let AnthropicContentPart::Text { text } = &content_parts[0] {
+                AnthropicContent::Text(text.clone())
+            } else {
+                AnthropicContent::Parts(content_parts)
+            }
+        } else if content_parts.is_empty() {
+            AnthropicContent::Text(String::new())
+        } else {
+            AnthropicContent::Parts(content_parts)
+        };
+
+        result.push(AnthropicMessage {
+            role: msg.role.clone(),
+            content,
+        });
+    }
+
+    result
+}
+
+fn build_anthropic_tools(tools: &[ToolDefinition]) -> Vec<AnthropicTool> {
+    tools
+        .iter()
+        .map(|tool| AnthropicTool {
+            name: tool.name.clone(),
+            description: tool.description.clone(),
+            input_schema: tool.input_schema.clone(),
+        })
+        .collect()
+}
 static TOKIO_RUNTIME: OnceLock<Runtime> = OnceLock::new();
 
 fn get_tokio_runtime() -> &'static Runtime {
-    TOKIO_RUNTIME.get_or_init(|| {
-        Runtime::new().expect("Failed to create Tokio runtime")
-    })
+    TOKIO_RUNTIME.get_or_init(|| Runtime::new().expect("Failed to create Tokio runtime"))
 }
 
 /// Run an async function on the Tokio runtime (for use from GPUI's smol context)
@@ -52,7 +483,10 @@ pub fn stream_chat_to_channel(
     std::thread::spawn(move || {
         get_tokio_runtime().block_on(async move {
             let api_client = ApiClient::new();
-            match api_client.stream_chat_completion(provider, &api_key, &model, messages).await {
+            match api_client
+                .stream_chat_completion(provider, &api_key, &model, messages)
+                .await
+            {
                 Ok(mut stream) => {
                     while let Some(chunk_result) = stream.next().await {
                         match chunk_result {
@@ -358,11 +792,7 @@ impl ApiClient {
             let client = client.clone();
             async move {
                 let endpoint = format!("{}/v1/models", base_url);
-                let response = client
-                    .get(&endpoint)
-                    .send()
-                    .await
-                    .map_err(|e| anyhow!(e))?;
+                let response = client.get(&endpoint).send().await.map_err(|e| anyhow!(e))?;
 
                 let status = response.status();
                 if !status.is_success() {
@@ -444,11 +874,7 @@ impl ApiClient {
             let client = client.clone();
             async move {
                 let endpoint = format!("{}/api/tags", base_url);
-                let response = client
-                    .get(&endpoint)
-                    .send()
-                    .await
-                    .map_err(|e| anyhow!(e))?;
+                let response = client.get(&endpoint).send().await.map_err(|e| anyhow!(e))?;
 
                 let status = response.status();
                 if !status.is_success() {
@@ -831,11 +1257,8 @@ impl ApiClient {
                                 .text()
                                 .await
                                 .unwrap_or_else(|_| "Unknown error".to_string());
-                            let error = anyhow!(
-                                "LM Studio streaming error {}: {}",
-                                status,
-                                error_text
-                            );
+                            let error =
+                                anyhow!("LM Studio streaming error {}: {}", status, error_text);
                             if Self::is_retryable_error(&error) {
                                 eprintln!("Retrying LM Studio streaming connection: {}", error);
                             }
@@ -860,7 +1283,9 @@ impl ApiClient {
                                 match serde_json::from_str::<Value>(&event.data) {
                                     Ok(parsed) => {
                                         // Extract text from choices array
-                                        if let Some(choice) = parsed["choices"].as_array().and_then(|arr| arr.first()) {
+                                        if let Some(choice) =
+                                            parsed["choices"].as_array().and_then(|arr| arr.first())
+                                        {
                                             if let Some(text) = choice["text"].as_str() {
                                                 if !text.is_empty() {
                                                     return Some(Ok(text.to_string()));
@@ -922,11 +1347,8 @@ impl ApiClient {
                                 .text()
                                 .await
                                 .unwrap_or_else(|_| "Unknown error".to_string());
-                            let error = anyhow!(
-                                "Ollama streaming error {}: {}",
-                                status,
-                                error_text
-                            );
+                            let error =
+                                anyhow!("Ollama streaming error {}: {}", status, error_text);
                             if Self::is_retryable_error(&error) {
                                 eprintln!("Retrying Ollama streaming connection: {}", error);
                             }
@@ -1015,11 +1437,8 @@ impl ApiClient {
                                 .text()
                                 .await
                                 .unwrap_or_else(|_| "Unknown error".to_string());
-                            let error = anyhow!(
-                                "OpenRouter streaming error {}: {}",
-                                status,
-                                error_text
-                            );
+                            let error =
+                                anyhow!("OpenRouter streaming error {}: {}", status, error_text);
                             if Self::is_retryable_error(&error) {
                                 eprintln!("Retrying OpenRouter streaming connection: {}", error);
                             }
@@ -1094,7 +1513,8 @@ impl ApiClient {
                                 .text()
                                 .await
                                 .unwrap_or_else(|_| "Unknown error".to_string());
-                            let error = anyhow!("OpenAI streaming error {}: {}", status, error_text);
+                            let error =
+                                anyhow!("OpenAI streaming error {}: {}", status, error_text);
                             if Self::is_retryable_error(&error) {
                                 eprintln!("Retrying OpenAI streaming connection: {}", error);
                             }
@@ -1146,7 +1566,8 @@ impl ApiClient {
                     let messages = messages.clone();
                     let client = client.clone();
                     async move {
-                        let request_body = anthropic_request_body(messages.as_slice(), &model, true);
+                        let request_body =
+                            anthropic_request_body(messages.as_slice(), &model, true);
 
                         let response = client
                             .post(ANTHROPIC_MESSAGES_ENDPOINT)
@@ -1165,11 +1586,8 @@ impl ApiClient {
                                 .text()
                                 .await
                                 .unwrap_or_else(|_| "Unknown error".to_string());
-                            let error = anyhow!(
-                                "Anthropic streaming error {}: {}",
-                                status,
-                                error_text
-                            );
+                            let error =
+                                anyhow!("Anthropic streaming error {}: {}", status, error_text);
                             if Self::is_retryable_error(&error) {
                                 eprintln!("Retrying Anthropic streaming connection: {}", error);
                             }
@@ -1205,6 +1623,304 @@ impl ApiClient {
             }
         }
     }
+
+    /// Get the base URL for a provider (returns URL ending with /v1 for chat completions)
+    fn base_url(&self, provider: ProviderKind, custom_url: Option<&str>) -> String {
+        match provider {
+            ProviderKind::OpenRouter => "https://openrouter.ai/api/v1".to_string(),
+            ProviderKind::OpenAI => "https://api.openai.com/v1".to_string(),
+            ProviderKind::Anthropic => "https://api.anthropic.com/v1".to_string(),
+            ProviderKind::LMStudio => {
+                let url = custom_url.unwrap_or("http://localhost:1234");
+                let base = url.trim_end_matches('/');
+                if base.ends_with("/v1") {
+                    base.to_string()
+                } else {
+                    format!("{}/v1", base)
+                }
+            }
+            ProviderKind::Ollama => {
+                let url = custom_url.unwrap_or("http://localhost:11434");
+                let base = url.trim_end_matches('/');
+                if base.ends_with("/v1") {
+                    base.to_string()
+                } else {
+                    format!("{}/v1", base)
+                }
+            }
+        }
+    }
+
+    /// Stream a chat completion with tools to a channel
+    pub async fn stream_message_with_tools(
+        &self,
+        provider: ProviderKind,
+        api_key: &str,
+        model: &str,
+        messages: &[Message],
+        tools: &[ToolDefinition],
+        tx: std::sync::mpsc::Sender<StreamEvent>,
+    ) {
+        let result = match provider {
+            ProviderKind::Anthropic => {
+                self.stream_anthropic_with_tools(api_key, model, messages, tools, tx.clone())
+                    .await
+            }
+            _ => {
+                self.stream_openai_with_tools(provider, api_key, model, messages, tools, tx.clone())
+                    .await
+            }
+        };
+
+        if let Err(e) = result {
+            let _ = tx.send(StreamEvent::Error(e.to_string()));
+        }
+    }
+
+    async fn stream_openai_with_tools(
+        &self,
+        provider: ProviderKind,
+        api_key: &str,
+        model: &str,
+        messages: &[Message],
+        tools: &[ToolDefinition],
+        tx: std::sync::mpsc::Sender<StreamEvent>,
+    ) -> Result<()> {
+        let base_url = self.base_url(provider, Some(api_key));
+        let url = format!("{}/chat/completions", base_url);
+
+        let api_messages = build_openai_messages(messages);
+        let api_tools = if tools.is_empty() {
+            None
+        } else {
+            Some(build_openai_tools(tools))
+        };
+
+        let request = OpenAIChatRequest {
+            model: model.to_string(),
+            messages: api_messages,
+            stream: true,
+            tools: api_tools,
+        };
+
+        let mut req_builder = self
+            .client
+            .post(&url)
+            .header("Content-Type", "application/json");
+
+        match provider {
+            ProviderKind::OpenRouter | ProviderKind::OpenAI => {
+                req_builder = req_builder.header("Authorization", format!("Bearer {}", api_key));
+            }
+            _ => {}
+        }
+
+        if provider == ProviderKind::OpenRouter {
+            req_builder = req_builder
+                .header("HTTP-Referer", "https://github.com/your-username/overlook")
+                .header("X-Title", "Overlook Chat");
+        }
+
+        let response = req_builder.json(&request).send().await?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let error_text = response.text().await.unwrap_or_default();
+            return Err(anyhow!("API error {}: {}", status, error_text));
+        }
+
+        let mut stream = response.bytes_stream();
+        let mut buffer = String::new();
+
+        let mut current_tool_calls: std::collections::HashMap<usize, (String, String, String)> =
+            std::collections::HashMap::new();
+
+        while let Some(chunk_result) = stream.next().await {
+            let chunk = chunk_result?;
+            buffer.push_str(&String::from_utf8_lossy(&chunk));
+
+            while let Some(line_end) = buffer.find('\n') {
+                let line = buffer[..line_end].trim().to_string();
+                buffer = buffer[line_end + 1..].to_string();
+
+                if line.starts_with("data: ") {
+                    let data = &line[6..];
+                    if data == "[DONE]" {
+                        for (index, _) in &current_tool_calls {
+                            let _ = tx.send(StreamEvent::ToolCallEnd { index: *index });
+                        }
+                        let _ = tx.send(StreamEvent::Done);
+                        return Ok(());
+                    }
+
+                    if let Ok(chunk) = serde_json::from_str::<StreamChunk>(data) {
+                        for choice in chunk.choices {
+                            if let Some(content) = choice.delta.content {
+                                if tx.send(StreamEvent::Content(content)).is_err() {
+                                    return Ok(());
+                                }
+                            }
+
+                            if let Some(tcs) = choice.delta.tool_calls {
+                                for tc in tcs {
+                                    let index = tc.index;
+                                    if let Some(id) = tc.id {
+                                        let name = tc
+                                            .function
+                                            .as_ref()
+                                            .and_then(|f| f.name.clone())
+                                            .unwrap_or_default();
+                                        current_tool_calls.insert(
+                                            index,
+                                            (id.clone(), name.clone(), String::new()),
+                                        );
+                                        let _ =
+                                            tx.send(StreamEvent::ToolCallStart { index, id, name });
+                                    }
+
+                                    if let Some(ref func) = tc.function {
+                                        if let Some(ref args) = func.arguments {
+                                            if let Some((_, _, ref mut accumulated)) =
+                                                current_tool_calls.get_mut(&index)
+                                            {
+                                                accumulated.push_str(args);
+                                            }
+                                            let _ = tx.send(StreamEvent::ToolCallDelta {
+                                                index,
+                                                arguments: args.clone(),
+                                            });
+                                        }
+                                    }
+                                }
+                            }
+
+                            if choice.finish_reason == Some("tool_calls".to_string()) {
+                                for (index, _) in &current_tool_calls {
+                                    let _ = tx.send(StreamEvent::ToolCallEnd { index: *index });
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        let _ = tx.send(StreamEvent::Done);
+        Ok(())
+    }
+
+    async fn stream_anthropic_with_tools(
+        &self,
+        api_key: &str,
+        model: &str,
+        messages: &[Message],
+        tools: &[ToolDefinition],
+        tx: std::sync::mpsc::Sender<StreamEvent>,
+    ) -> Result<()> {
+        let url = ANTHROPIC_MESSAGES_ENDPOINT;
+
+        let api_messages = build_anthropic_messages(messages);
+        let api_tools = if tools.is_empty() {
+            None
+        } else {
+            Some(build_anthropic_tools(tools))
+        };
+
+        let request = AnthropicRequest {
+            model: model.to_string(),
+            messages: api_messages,
+            max_tokens: 4096,
+            stream: true,
+            tools: api_tools,
+        };
+
+        let response = self
+            .client
+            .post(url)
+            .header("Content-Type", "application/json")
+            .header("x-api-key", api_key)
+            .header("anthropic-version", ANTHROPIC_VERSION)
+            .json(&request)
+            .send()
+            .await?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let error_text = response.text().await.unwrap_or_default();
+            return Err(anyhow!("API error {}: {}", status, error_text));
+        }
+
+        let mut stream = response.bytes_stream();
+        let mut buffer = String::new();
+
+        let mut current_tool: Option<(usize, String, String, String)> = None;
+
+        while let Some(chunk_result) = stream.next().await {
+            let chunk = chunk_result?;
+            buffer.push_str(&String::from_utf8_lossy(&chunk));
+
+            while let Some(line_end) = buffer.find('\n') {
+                let line = buffer[..line_end].trim().to_string();
+                buffer = buffer[line_end + 1..].to_string();
+
+                if line.starts_with("data: ") {
+                    let data = &line[6..];
+                    if let Ok(event) = serde_json::from_str::<AnthropicStreamEvent>(data) {
+                        match event.event_type.as_str() {
+                            "content_block_start" => {
+                                if let Some(block) = event.content_block {
+                                    if block.block_type == "tool_use" {
+                                        let index = event.index.unwrap_or(0);
+                                        let id = block.id.unwrap_or_default();
+                                        let name = block.name.unwrap_or_default();
+                                        current_tool =
+                                            Some((index, id.clone(), name.clone(), String::new()));
+                                        let _ =
+                                            tx.send(StreamEvent::ToolCallStart { index, id, name });
+                                    }
+                                }
+                            }
+                            "content_block_delta" => {
+                                if let Some(delta) = event.delta {
+                                    if let Some(text) = delta.text {
+                                        if tx.send(StreamEvent::Content(text)).is_err() {
+                                            return Ok(());
+                                        }
+                                    }
+                                    if delta.delta_type == Some("input_json_delta".to_string()) {
+                                        if let Some(partial) = delta.partial_json {
+                                            if let Some((index, _, _, ref mut args)) =
+                                                current_tool.as_mut()
+                                            {
+                                                args.push_str(&partial);
+                                                let _ = tx.send(StreamEvent::ToolCallDelta {
+                                                    index: *index,
+                                                    arguments: partial,
+                                                });
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            "content_block_stop" => {
+                                if let Some((index, _, _, _)) = current_tool.take() {
+                                    let _ = tx.send(StreamEvent::ToolCallEnd { index });
+                                }
+                            }
+                            "message_stop" => {
+                                let _ = tx.send(StreamEvent::Done);
+                                return Ok(());
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+            }
+        }
+
+        let _ = tx.send(StreamEvent::Done);
+        Ok(())
+    }
 }
 
 fn openai_style_messages(messages: &[Message]) -> Vec<Value> {
@@ -1227,15 +1943,14 @@ fn openai_style_messages(messages: &[Message]) -> Vec<Value> {
                 let mut content_parts: Vec<Value> = Vec::new();
 
                 // Collect text attachments to append to main content
-                let text_attachments: Vec<String> = message.attachments
+                let text_attachments: Vec<String> = message
+                    .attachments
                     .iter()
-                    .filter_map(|att| {
-                        match &att.data {
-                            AttachmentData::Text { content } => {
-                                Some(format!("\n\n--- {} ---\n{}", att.file_name, content))
-                            }
-                            _ => None,
+                    .filter_map(|att| match &att.data {
+                        AttachmentData::Text { content } => {
+                            Some(format!("\n\n--- {} ---\n{}", att.file_name, content))
                         }
+                        _ => None,
                     })
                     .collect();
 
@@ -1286,7 +2001,8 @@ fn ollama_style_messages(messages: &[Message]) -> Vec<Value> {
             for attachment in &message.attachments {
                 match &attachment.data {
                     AttachmentData::Text { content: text } => {
-                        content.push_str(&format!("\n\n--- {} ---\n{}", attachment.file_name, text));
+                        content
+                            .push_str(&format!("\n\n--- {} ---\n{}", attachment.file_name, text));
                     }
                     AttachmentData::Image { base64 } => {
                         // Ollama accepts base64 images in the images array
@@ -1384,15 +2100,14 @@ fn anthropic_request_body(messages: &[Message], model: &str, stream: bool) -> Va
                 let mut content_parts: Vec<Value> = Vec::new();
 
                 // Collect text attachments to append to main content
-                let text_attachments: Vec<String> = message.attachments
+                let text_attachments: Vec<String> = message
+                    .attachments
                     .iter()
-                    .filter_map(|att| {
-                        match &att.data {
-                            AttachmentData::Text { content } => {
-                                Some(format!("\n\n--- {} ---\n{}", att.file_name, content))
-                            }
-                            _ => None,
+                    .filter_map(|att| match &att.data {
+                        AttachmentData::Text { content } => {
+                            Some(format!("\n\n--- {} ---\n{}", att.file_name, content))
                         }
+                        _ => None,
                     })
                     .collect();
 

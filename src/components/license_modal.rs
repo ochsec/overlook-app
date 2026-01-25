@@ -14,10 +14,8 @@ pub struct LicenseModal {
 
 impl LicenseModal {
     pub fn new(state: Entity<AppState>, window: &mut Window, cx: &mut Context<Self>) -> Self {
-        let license_input = cx.new(|cx| {
-            InputState::new(window, cx)
-                .placeholder("XXXX-XXXX-XXXX-XXXX")
-        });
+        let license_input =
+            cx.new(|cx| InputState::new(window, cx).placeholder("XXXX-XXXX-XXXX-XXXX"));
 
         Self {
             state,

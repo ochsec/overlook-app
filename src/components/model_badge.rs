@@ -1,7 +1,7 @@
 // Model Badge Component - Coming in Phase 4
 // Will display current model information
 
-use gpui::*;
+// Model badge will be implemented later
 
 pub struct ModelBadge;
 

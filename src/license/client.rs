@@ -37,12 +37,7 @@ impl LicenseClient {
             hardware_id: hardware_id.to_string(),
         };
 
-        let response = self
-            .client
-            .post(&url)
-            .json(&request)
-            .send()
-            .await?;
+        let response = self.client.post(&url).json(&request).send().await?;
 
         if response.status().is_success() {
             let result: ValidationResult = response.json().await?;

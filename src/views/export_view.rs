@@ -1,11 +1,11 @@
 // Export View - Chat export functionality
-use gpui::*;
+use crate::export::Exporter;
+use crate::state::AppState;
 use gpui::prelude::*;
+use gpui::*;
 use gpui_component::button::{Button, ButtonVariants};
 use gpui_component::menu::{DropdownMenu, PopupMenuItem};
 use gpui_component::Disableable;
-use crate::state::AppState;
-use crate::export::Exporter;
 
 pub struct ExportView {
     state: Entity<AppState>,
@@ -37,9 +37,16 @@ impl ExportView {
         let content = Exporter::generate_chat_markdown(chat);
 
         // Create filename from chat title
-        let safe_title: String = chat.title
+        let safe_title: String = chat
+            .title
             .chars()
-            .map(|c| if c.is_alphanumeric() || c == ' ' || c == '-' { c } else { '_' })
+            .map(|c| {
+                if c.is_alphanumeric() || c == ' ' || c == '-' {
+                    c
+                } else {
+                    '_'
+                }
+            })
             .collect();
         let filename = format!("{}.md", safe_title.trim());
 
@@ -72,8 +79,7 @@ impl Render for ExportView {
 
         // Get selected chat info
         let selected_chat_id = state.export_selected_chat_id.clone();
-        let selected_chat = selected_chat_id.as_ref()
-            .and_then(|id| state.chats.get(id));
+        let selected_chat = selected_chat_id.as_ref().and_then(|id| state.chats.get(id));
 
         let selected_label = selected_chat
             .map(|c| c.title.clone())

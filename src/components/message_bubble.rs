@@ -1,10 +1,10 @@
 // Message Component - Terminal-style chat messages with markdown support
-use gpui::*;
-use gpui::prelude::*;
+use crate::components::attachment_preview::render_message_attachments;
 use crate::gpui_theme::GpuiTheme;
 use crate::markdown::render_markdown;
 use crate::types::Message;
-use crate::components::attachment_preview::render_message_attachments;
+use gpui::prelude::*;
+use gpui::*;
 
 pub struct MessageBubble {
     message: Message,
@@ -15,7 +15,12 @@ pub struct MessageBubble {
 
 impl MessageBubble {
     pub fn new(message: Message, theme: GpuiTheme, font_size: f32) -> Self {
-        Self { message, theme, font_size, index: 0 }
+        Self {
+            message,
+            theme,
+            font_size,
+            index: 0,
+        }
     }
 
     pub fn with_index(mut self, index: usize) -> Self {
@@ -51,7 +56,7 @@ impl MessageBubble {
                             div()
                                 .text_color(self.theme.text_muted)
                                 .text_size(px(font_size))
-                                .child("#")
+                                .child("#"),
                         )
                         .child(
                             div()
@@ -61,8 +66,8 @@ impl MessageBubble {
                                 .text_size(px(font_size - 1.0))
                                 .italic()
                                 .whitespace_normal()
-                                .child(self.message.content.clone())
-                        )
+                                .child(self.message.content.clone()),
+                        ),
                 )
                 .child(
                     div()
@@ -75,7 +80,7 @@ impl MessageBubble {
                         .child("[copy]")
                         .on_mouse_down(MouseButton::Left, move |_, _, cx| {
                             cx.write_to_clipboard(ClipboardItem::new_string(content_clone.clone()));
-                        })
+                        }),
                 )
         } else if is_user {
             // User message - with > prompt prefix
@@ -100,7 +105,7 @@ impl MessageBubble {
                                 .text_color(self.theme.accent)
                                 .text_size(px(font_size))
                                 .font_weight(FontWeight::BOLD)
-                                .child(">")
+                                .child(">"),
                         )
                         .child(
                             div()
@@ -109,7 +114,7 @@ impl MessageBubble {
                                 .text_color(self.theme.text_primary)
                                 .text_size(px(font_size))
                                 .whitespace_normal()
-                                .child(self.message.content.clone())
+                                .child(self.message.content.clone()),
                         )
                         .child(
                             div()
@@ -121,17 +126,19 @@ impl MessageBubble {
                                 .hover(|s| s.text_color(theme_primary))
                                 .child("[copy]")
                                 .on_mouse_down(MouseButton::Left, move |_, _, cx| {
-                                    cx.write_to_clipboard(ClipboardItem::new_string(content_clone.clone()));
-                                })
-                        )
+                                    cx.write_to_clipboard(ClipboardItem::new_string(
+                                        content_clone.clone(),
+                                    ));
+                                }),
+                        ),
                 )
                 // Show attachments if present
                 .when(has_attachments, |this| {
-                    this.child(
-                        div()
-                            .pl_4()
-                            .child(render_message_attachments(&attachments, &theme_for_attachments, font_size))
-                    )
+                    this.child(div().pl_4().child(render_message_attachments(
+                        &attachments,
+                        &theme_for_attachments,
+                        font_size,
+                    )))
                 })
         } else {
             // Assistant message - with markdown rendering
@@ -150,49 +157,60 @@ impl MessageBubble {
                 .gap_0()
                 .overflow_hidden()
                 // Model info line with copy button (if available)
-                .when(self.message.provider.is_some() && self.message.model.is_some(), |this| {
-                    let provider_name = self.message.provider
-                        .as_ref()
-                        .map(|p| p.display_name())
-                        .unwrap_or("");
-                    let model_name = self.message.model
-                        .as_ref()
-                        .map(|s| s.as_str())
-                        .unwrap_or("");
+                .when(
+                    self.message.provider.is_some() && self.message.model.is_some(),
+                    |this| {
+                        let provider_name = self
+                            .message
+                            .provider
+                            .as_ref()
+                            .map(|p| p.display_name())
+                            .unwrap_or("");
+                        let model_name = self
+                            .message
+                            .model
+                            .as_ref()
+                            .map(|s| s.as_str())
+                            .unwrap_or("");
 
-                    this.child(
-                        div()
-                            .flex()
-                            .justify_between()
-                            .child(
-                                div()
-                                    .text_size(px(font_size - 2.0))
-                                    .text_color(self.theme.text_muted)
-                                    .child(format!("--- {} ({}) ---", model_name, provider_name))
-                            )
-                            .child(
-                                div()
-                                    .text_size(px(font_size - 2.0))
-                                    .text_color(theme_muted)
-                                    .cursor_pointer()
-                                    .opacity(0.0)
-                                    .group_hover("message", |s| s.opacity(1.0))
-                                    .hover(|s| s.text_color(theme_primary))
-                                    .child("[copy]")
-                                    .on_mouse_down(MouseButton::Left, move |_, _, cx| {
-                                        cx.write_to_clipboard(ClipboardItem::new_string(content_clone.clone()));
-                                    })
-                            )
-                    )
-                })
+                        this.child(
+                            div()
+                                .flex()
+                                .justify_between()
+                                .child(
+                                    div()
+                                        .text_size(px(font_size - 2.0))
+                                        .text_color(self.theme.text_muted)
+                                        .child(format!(
+                                            "--- {} ({}) ---",
+                                            model_name, provider_name
+                                        )),
+                                )
+                                .child(
+                                    div()
+                                        .text_size(px(font_size - 2.0))
+                                        .text_color(theme_muted)
+                                        .cursor_pointer()
+                                        .opacity(0.0)
+                                        .group_hover("message", |s| s.opacity(1.0))
+                                        .hover(|s| s.text_color(theme_primary))
+                                        .child("[copy]")
+                                        .on_mouse_down(MouseButton::Left, move |_, _, cx| {
+                                            cx.write_to_clipboard(ClipboardItem::new_string(
+                                                content_clone.clone(),
+                                            ));
+                                        }),
+                                ),
+                        )
+                    },
+                )
                 // Fallback copy button for messages without model info
-                .when(self.message.provider.is_none() || self.message.model.is_none(), |this| {
-                    let content_clone2 = content_for_copy.clone();
-                    this.child(
-                        div()
-                            .flex()
-                            .justify_end()
-                            .child(
+                .when(
+                    self.message.provider.is_none() || self.message.model.is_none(),
+                    |this| {
+                        let content_clone2 = content_for_copy.clone();
+                        this.child(
+                            div().flex().justify_end().child(
                                 div()
                                     .text_size(px(font_size - 2.0))
                                     .text_color(theme_muted)
@@ -202,11 +220,14 @@ impl MessageBubble {
                                     .hover(|s| s.text_color(theme_primary))
                                     .child("[copy]")
                                     .on_mouse_down(MouseButton::Left, move |_, _, cx| {
-                                        cx.write_to_clipboard(ClipboardItem::new_string(content_clone2.clone()));
-                                    })
-                            )
-                    )
-                })
+                                        cx.write_to_clipboard(ClipboardItem::new_string(
+                                            content_clone2.clone(),
+                                        ));
+                                    }),
+                            ),
+                        )
+                    },
+                )
                 // Render content with markdown
                 .child(render_markdown(&content, &theme_clone, font_size))
         }
@@ -214,26 +235,22 @@ impl MessageBubble {
 }
 
 // Helper to render a streaming message with cursor
-pub fn render_streaming_message(content: &str, theme: &GpuiTheme, font_size: f32, show_cursor: bool) -> impl IntoElement {
-    div()
-        .flex()
-        .flex_col()
-        .px_4()
-        .py_1()
-        .child(
-            div()
-                .flex()
-                .flex_wrap()
-                .text_color(theme.text_secondary)
-                .text_size(px(font_size))
-                .whitespace_normal()
-                .child(content.to_string())
-                .when(show_cursor, |this| {
-                    this.child(
-                        div()
-                            .text_color(theme.accent)
-                            .child("▊")
-                    )
-                })
-        )
+pub fn render_streaming_message(
+    content: &str,
+    theme: &GpuiTheme,
+    font_size: f32,
+    show_cursor: bool,
+) -> impl IntoElement {
+    div().flex().flex_col().px_4().py_1().child(
+        div()
+            .flex()
+            .flex_wrap()
+            .text_color(theme.text_secondary)
+            .text_size(px(font_size))
+            .whitespace_normal()
+            .child(content.to_string())
+            .when(show_cursor, |this| {
+                this.child(div().text_color(theme.accent).child("▊"))
+            }),
+    )
 }

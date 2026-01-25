@@ -105,6 +105,30 @@ pub struct SearchResult {
     pub content: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ToolCall {
+    pub id: String,
+    pub name: String,
+    pub server_name: String,
+    pub arguments: Option<serde_json::Map<String, serde_json::Value>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ToolResult {
+    pub tool_call_id: String,
+    pub content: String,
+    pub is_error: bool,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct PendingToolCall {
+    pub index: usize,
+    pub id: String,
+    pub name: String,
+    pub arguments: String,
+    pub server_name: String,
+}
+
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct Message {
     pub role: String,
@@ -117,9 +141,80 @@ pub struct Message {
     pub model: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub search_results: Option<Vec<SearchResult>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tool_calls: Option<Vec<ToolCall>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tool_result: Option<ToolResult>,
     /// Auto-generated title for user messages (used in turn headers)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub title: Option<String>,
+}
+
+impl Message {
+    pub fn new_user(content: String) -> Self {
+        Self {
+            role: "user".to_string(),
+            content,
+            timestamp: Utc::now(),
+            attachments: Vec::new(),
+            provider: None,
+            model: None,
+            search_results: None,
+            tool_calls: None,
+            tool_result: None,
+            title: None,
+        }
+    }
+
+    pub fn new_assistant(content: String, provider: ProviderKind, model: String) -> Self {
+        Self {
+            role: "assistant".to_string(),
+            content,
+            timestamp: Utc::now(),
+            attachments: Vec::new(),
+            provider: Some(provider),
+            model: Some(model),
+            search_results: None,
+            tool_calls: None,
+            tool_result: None,
+            title: None,
+        }
+    }
+
+    pub fn new_assistant_with_tool_calls(
+        content: String,
+        provider: ProviderKind,
+        model: String,
+        tool_calls: Vec<ToolCall>,
+    ) -> Self {
+        Self {
+            role: "assistant".to_string(),
+            content,
+            timestamp: Utc::now(),
+            attachments: Vec::new(),
+            provider: Some(provider),
+            model: Some(model),
+            search_results: None,
+            tool_calls: Some(tool_calls),
+            tool_result: None,
+            title: None,
+        }
+    }
+
+    pub fn new_tool_result(result: ToolResult) -> Self {
+        Self {
+            role: "tool".to_string(),
+            content: result.content.clone(),
+            timestamp: Utc::now(),
+            attachments: Vec::new(),
+            provider: None,
+            model: None,
+            search_results: None,
+            tool_calls: None,
+            tool_result: Some(result),
+            title: None,
+        }
+    }
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -210,3 +305,11 @@ pub type ChatMap = HashMap<String, Chat>;
 pub type ProjectMap = HashMap<String, Project>;
 // Legacy type for migration
 pub type FolderMap = HashMap<String, String>;
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Tool {
+    pub name: String,
+    pub server_name: String,
+    pub description: String,
+    pub schema: Option<serde_json::Value>,
+}
