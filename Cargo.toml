@@ -7,9 +7,6 @@ edition = "2021"
 name = "overlook"
 path = "src/main.rs"
 
-[[bin]]
-name = "test_pdf"
-path = "src/bin/test_pdf.rs"
 
 [dependencies]
 gpui = { version = "0.2.2", features = ["runtime_shaders"] }
