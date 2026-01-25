@@ -370,49 +370,51 @@ impl ChatInput {
             state.stream_completed = false;
         });
 
+        // Get MCP manager on the main thread so tool listing works reliably in the async task
+        let mcp_manager = state_model.read(cx).mcp_manager.clone();
+
         // Spawn task to handle tool-enabled streaming
         let model_for_result = model.clone();
         cx.spawn({
             let state_model = state_model.clone();
+            let mcp_manager = mcp_manager;
             let api_key = api_key.clone();
             let model = model.clone();
             async move |_this, cx| {
                 let mut current_messages = api_messages;
-                let api_client = ApiClient::new();
 
                 loop {
-                    // Check for available tools
-                    let tools = {
-                        let state = state_model.read_with(cx, |state, _| state.mcp_manager.clone());
-                        match state {
-                            Ok(manager) => {
-                                // Check if manager has a custom get_all_tools method, if not use list_all_tools from McpManager
-                                manager
-                                    .list_all_tools()
-                                    .await
-                                    .into_iter()
-                                    .map(|(server_name, tool)| {
-                                        // Convert to a format compatible with our tools list
-                                        crate::types::Tool {
-                                            name: tool.name.to_string(),
-                                            server_name,
-                                            description: tool
-                                                .description
-                                                .unwrap_or_default()
-                                                .to_string(),
-                                            schema: Some(serde_json::Value::Object(
-                                                (*tool.input_schema).clone(),
-                                            )),
-                                        }
-                                    })
-                                    .collect::<Vec<_>>()
+                    // List tools from all connected MCP servers for the LLM to use
+                    let tools: Vec<crate::types::Tool> = mcp_manager
+                        .list_all_tools()
+                        .await
+                        .into_iter()
+                        .map(|(server_name, tool)| {
+                            // Use compound name "server::tool" so the LLM sees unique tool names
+                            // and we can route correctly when multiple servers expose the same name
+                            let name = format!(
+                                "{}::{}",
+                                server_name,
+                                tool.name.as_ref()
+                            );
+                            let description = tool
+                                .description
+                                .as_deref()
+                                .unwrap_or("")
+                                .to_string();
+                            // Convert MCP input_schema to JSON Value for OpenAI/Anthropic parameters
+                            let schema = serde_json::to_value(&*tool.input_schema)
+                                .ok()
+                                .filter(|v| v.is_object())
+                                .unwrap_or_else(|| serde_json::Value::Object(serde_json::Map::new()));
+                            crate::types::Tool {
+                                name,
+                                server_name,
+                                description,
+                                schema: Some(schema),
                             }
-                            Err(e) => {
-                                eprintln!("Failed to get MCP manager: {}", e);
-                                Vec::new()
-                            }
-                        }
-                    };
+                        })
+                        .collect();
 
                     let (tx, rx) = std::sync::mpsc::channel();
 
@@ -548,26 +550,31 @@ impl ChatInput {
                         // Execute tools
                         let mut results = Vec::new();
                         for ptc in &pending_tool_calls {
-                            let mcp_manager =
-                                state_model.read_with(cx, |state, _| state.mcp_manager.clone());
-                            let tool_name = ptc.name.clone();
                             let arguments =
                                 serde_json::from_str(&ptc.arguments).unwrap_or_default();
 
-                            let server_name = tools
+                            let (server_name, mcp_tool_name) = tools
                                 .iter()
                                 .find(|t| t.name == ptc.name)
-                                .map(|t| t.server_name.clone())
+                                .map(|t| {
+                                    // Extract short MCP tool name from "server::tool" for call_tool
+                                    let short = t.name
+                                        .rsplit_once("::")
+                                        .map(|(_, n)| n.to_string())
+                                        .unwrap_or_else(|| t.name.clone());
+                                    (t.server_name.clone(), short)
+                                })
                                 .unwrap_or_default();
 
-                            println!("Executing tool: {} on server: {}", tool_name, server_name);
+                            println!(
+                                "Executing MCP tool: {} on server: {}",
+                                mcp_tool_name, server_name
+                            );
 
-                            match match mcp_manager {
-                                Ok(manager) => {
-                                    manager.call_tool(&server_name, &tool_name, arguments).await
-                                }
-                                Err(e) => Err(anyhow::anyhow!("MCP manager not available: {}", e)),
-                            } {
+                            match mcp_manager
+                                .call_tool(&server_name, &mcp_tool_name, arguments)
+                                .await
+                            {
                                 Ok(content) => {
                                     results.push(crate::types::ToolResult {
                                         tool_call_id: ptc.id.clone(),
