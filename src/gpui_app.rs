@@ -63,6 +63,11 @@ impl OverlookApp {
             return;
         }
 
+        self.models_load_started = true;
+
+        // Auto-connect MCP servers on startup
+        self.state.read(cx).connect_mcp_servers(&mut cx.to_async());
+
         // Get provider and API key
         let (provider, api_key, has_key) = {
             let state = self.state.read(cx);
@@ -70,13 +75,10 @@ impl OverlookApp {
             (state.current_provider, key.clone(), !key.trim().is_empty())
         };
 
-        // Only load if we have an API key
+        // Only load models if we have an API key
         if !has_key {
-            self.models_load_started = true;
             return;
         }
-
-        self.models_load_started = true;
 
         // Set loading state
         self.state.update(cx, |state, _| {

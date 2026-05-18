@@ -268,13 +268,17 @@ impl AppState {
     pub fn connect_mcp_servers(&self, cx: &mut AsyncApp) {
         let mcp_manager = self.mcp_manager.clone();
         cx.spawn(|_: &mut gpui::AsyncApp| async move {
-            mcp_manager.set_default_search_rate_limit().await;
-            let results = mcp_manager.connect_all().await;
-            for result in results {
-                if let Err(e) = result {
-                    eprintln!("MCP Connection Error: {}", e);
+            // MCP connections require Tokio runtime (TokioChildProcess), so run on Tokio
+            crate::api::run_on_tokio_async(async move {
+                mcp_manager.set_default_search_rate_limit().await;
+                let results = mcp_manager.connect_all().await;
+                for result in results {
+                    if let Err(e) = result {
+                        eprintln!("MCP Connection Error: {}", e);
+                    }
                 }
-            }
+            })
+            .await;
         })
         .detach();
     }
@@ -283,7 +287,10 @@ impl AppState {
     pub fn disconnect_mcp_servers(&self, cx: &mut AsyncApp) {
         let mcp_manager = self.mcp_manager.clone();
         cx.spawn(|_: &mut gpui::AsyncApp| async move {
-            let _ = mcp_manager.disconnect_all().await;
+            crate::api::run_on_tokio_async(async move {
+                let _ = mcp_manager.disconnect_all().await;
+            })
+            .await;
         })
         .detach();
     }

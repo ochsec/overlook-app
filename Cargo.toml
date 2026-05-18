@@ -43,4 +43,4 @@ sha2 = "0.10"
 hex = "0.4"
 hostname = "0.4"
 whoami = "1.5"
-rmcp = { version = "0.12", default-features = false, features = ["client", "transport-child-process", "base64", "macros", "server"] }
+rmcp = { version = "0.12", default-features = false, features = ["client", "transport-child-process", "transport-streamable-http-client-reqwest", "base64", "macros", "server"] }

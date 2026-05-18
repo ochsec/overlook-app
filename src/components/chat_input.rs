@@ -390,13 +390,17 @@ impl ChatInput {
                         .await
                         .into_iter()
                         .map(|(server_name, tool)| {
-                            // Use compound name "server::tool" so the LLM sees unique tool names
-                            // and we can route correctly when multiple servers expose the same name
-                            let name = format!(
-                                "{}::{}",
-                                server_name,
-                                tool.name.as_ref()
-                            );
+                            // Sanitize compound name to only contain [a-zA-Z0-9_-]
+                            // Many LLM providers (e.g. Amazon Bedrock) require tool names matching ^[a-zA-Z0-9_-]{1,128}$
+                            let safe_server: String = server_name
+                                .chars()
+                                .map(|c| if c.is_alphanumeric() || c == '-' || c == '_' { c } else { '_' })
+                                .collect();
+                            let safe_tool: String = tool.name.as_ref()
+                                .chars()
+                                .map(|c| if c.is_alphanumeric() || c == '-' || c == '_' { c } else { '_' })
+                                .collect();
+                            let name = format!("{}__{}", safe_server, safe_tool);
                             let description = tool
                                 .description
                                 .as_deref()
@@ -415,6 +419,11 @@ impl ChatInput {
                             }
                         })
                         .collect();
+
+                    println!("[Chat] Sending {} tools to LLM", tools.len());
+                    for t in &tools {
+                        println!("[Chat]   - {} (server: {})", t.name, t.server_name);
+                    }
 
                     let (tx, rx) = std::sync::mpsc::channel();
 
@@ -557,9 +566,9 @@ impl ChatInput {
                                 .iter()
                                 .find(|t| t.name == ptc.name)
                                 .map(|t| {
-                                    // Extract short MCP tool name from "server::tool" for call_tool
+                                    // Extract short MCP tool name from "server__tool" for call_tool
                                     let short = t.name
-                                        .rsplit_once("::")
+                                        .rsplit_once("__")
                                         .map(|(_, n)| n.to_string())
                                         .unwrap_or_else(|| t.name.clone());
                                     (t.server_name.clone(), short)
@@ -571,10 +580,16 @@ impl ChatInput {
                                 mcp_tool_name, server_name
                             );
 
-                            match mcp_manager
-                                .call_tool(&server_name, &mcp_tool_name, arguments)
-                                .await
-                            {
+                            let mcp_mgr = mcp_manager.clone();
+                            let srv = server_name.clone();
+                            let tool = mcp_tool_name.clone();
+                            println!("[Chat] Calling MCP tool: {} on server: {} with args: {:?}", tool, srv, arguments);
+                            let result = crate::api::run_on_tokio_async(async move {
+                                mcp_mgr.call_tool(&srv, &tool, arguments).await
+                            })
+                            .await;
+
+                            match result {
                                 Ok(content) => {
                                     results.push(crate::types::ToolResult {
                                         tool_call_id: ptc.id.clone(),
@@ -605,6 +620,10 @@ impl ChatInput {
                             })
                             .ok();
                         }
+
+                        // Clear pending tool calls and full response before looping for next response
+                        pending_tool_calls.clear();
+                        full_response.clear();
 
                         // Loop again to get assistant response for tool results
                         continue;

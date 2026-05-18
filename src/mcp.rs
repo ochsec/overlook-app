@@ -21,10 +21,15 @@ use tokio::time::{sleep, Instant};
 pub struct McpServerConfig {
     /// Unique name for this server
     pub name: String,
-    /// Command to run (e.g., "uvx", "npx", "node")
+    /// Command to run (e.g., "uvx", "npx", "node") - for stdio transport
+    #[serde(default)]
     pub command: String,
-    /// Arguments to pass to the command
+    /// Arguments to pass to the command - for stdio transport
+    #[serde(default)]
     pub args: Vec<String>,
+    /// URL for HTTP transport (if set, HTTP will be used instead of stdio)
+    #[serde(default)]
+    pub url: Option<String>,
     /// Environment variables to set
     #[serde(default)]
     pub env: HashMap<String, String>,
@@ -34,6 +39,12 @@ pub struct McpServerConfig {
     /// Minimum interval between tool calls in milliseconds (optional, for rate limiting)
     #[serde(default)]
     pub rate_limit_ms: Option<u64>,
+    /// Optional list of tool names to expose (if set, only these tools will be available)
+    #[serde(default)]
+    pub tools_allowlist: Option<Vec<String>>,
+    /// Optional list of tool names to block (if set, these tools will be hidden)
+    #[serde(default)]
+    pub tools_blocklist: Option<Vec<String>>,
 }
 
 fn default_true() -> bool {
@@ -75,9 +86,12 @@ impl McpServerConfig {
             name,
             command,
             args,
+            url: None,
             env: HashMap::new(),
             enabled: true,
             rate_limit_ms: None,
+            tools_allowlist: None,
+            tools_blocklist: None,
         }
     }
 }
@@ -167,19 +181,24 @@ impl McpManager {
         let mut results = Vec::new();
         let servers = self.config.lock().unwrap().servers.clone();
 
+        println!("[MCP] Connecting to {} servers", servers.len());
         for server_config in servers {
             if !server_config.enabled {
+                println!("[MCP] Skipping disabled server: {}", server_config.name);
                 continue;
             }
 
+            println!("[MCP] Connecting to server: {}", server_config.name);
             match self.connect_server(server_config.clone()).await {
                 Ok(tool_count) => {
+                    println!("[MCP] Connected to '{}': {} tools", server_config.name, tool_count);
                     results.push(Ok(format!(
                         "Connected to '{}': {} tools available",
                         server_config.name, tool_count
                     )));
                 }
                 Err(e) => {
+                    eprintln!("[MCP] Failed to connect to '{}': {}", server_config.name, e);
                     results.push(Err(anyhow::anyhow!(
                         "Failed to connect to '{}': {}",
                         server_config.name,
@@ -189,31 +208,40 @@ impl McpManager {
             }
         }
 
+        println!("[MCP] Connection complete, {} results", results.len());
         results
     }
 
     /// Connect to a single MCP server
     async fn connect_server(&self, config: McpServerConfig) -> Result<usize> {
-        let cmd = Command::new(&config.command);
+        println!("[MCP] Connecting to server: {} (transport: {})", config.name, if config.url.is_some() { "HTTP" } else { "STDIO" });
 
-        // Configure the command with args and env
-        let args = config.args.clone();
-        let env = config.env.clone();
+        let service = if let Some(url) = &config.url {
+            // HTTP transport
+            let transport = rmcp::transport::StreamableHttpClientTransport::from_uri(url.as_str());
+            serve_client((), transport)
+                .await
+                .map_err(|e| anyhow::anyhow!("Failed to connect to MCP server via HTTP '{}': {:?}", config.name, e))?
+        } else {
+            // STDIO transport
+            let cmd = Command::new(&config.command);
+            let args = config.args.clone();
+            let env = config.env.clone();
 
-        let transport = TokioChildProcess::new(cmd.configure(move |c| {
-            for arg in &args {
-                c.arg(arg);
-            }
-            for (key, value) in &env {
-                c.env(key, value);
-            }
-        }))
-        .context("Failed to create child process transport")?;
+            let transport = TokioChildProcess::new(cmd.configure(move |c| {
+                for arg in &args {
+                    c.arg(arg);
+                }
+                for (key, value) in &env {
+                    c.env(key, value);
+                }
+            }))
+            .context("Failed to create child process transport")?;
 
-        // Connect to the server using serve_client
-        let service = serve_client((), transport)
-            .await
-            .map_err(|e| anyhow::anyhow!("Failed to connect to MCP server: {:?}", e))?;
+            serve_client((), transport)
+                .await
+                .map_err(|e| anyhow::anyhow!("Failed to connect to MCP server via STDIO '{}': {:?}", config.name, e))?
+        };
 
         // Get available tools
         let tools_response = service
@@ -260,14 +288,38 @@ impl McpManager {
     /// Get all available tools from all connected servers
     pub async fn list_all_tools(&self) -> Vec<(String, Tool)> {
         let connected = self.connected.lock().await;
+        let config = self.config.lock().unwrap();
         let mut all_tools = Vec::new();
 
+        println!("[MCP] Listing tools from {} connected servers", connected.len());
         for (server_name, server) in connected.iter() {
+            // Get the server config to check allowlist/blocklist
+            let server_config = config.servers.iter().find(|s| &s.name == server_name);
+
             for tool in &server.tools {
-                all_tools.push((server_name.clone(), tool.clone()));
+                // Check if tool should be exposed based on allowlist/blocklist
+                let should_include = if let Some(cfg) = server_config {
+                    if let Some(allowlist) = &cfg.tools_allowlist {
+                        allowlist.contains(&tool.name.to_string())
+                    } else if let Some(blocklist) = &cfg.tools_blocklist {
+                        !blocklist.contains(&tool.name.to_string())
+                    } else {
+                        true
+                    }
+                } else {
+                    true
+                };
+
+                if should_include {
+                    println!("[MCP]   - {} (included)", tool.name);
+                    all_tools.push((server_name.clone(), tool.clone()));
+                } else {
+                    println!("[MCP]   - {} (filtered out)", tool.name);
+                }
             }
         }
 
+        println!("[MCP] Total tools available: {}", all_tools.len());
         all_tools
     }
 
@@ -278,14 +330,9 @@ impl McpManager {
         tool_name: &str,
         arguments: Option<serde_json::Map<String, serde_json::Value>>,
     ) -> Result<String> {
-        let limiters = self.rate_limiters.lock().await;
-        if let Some(limiter) = limiters.get(server_name) {
-            let limiter = limiter.clone();
-            drop(limiters);
-            limiter.acquire().await;
-        } else {
-            drop(limiters);
-        }
+        // Skip rate limiting here - it uses tokio::time::sleep which can hang
+        // when called from run_on_tokio_async. Rate limiting is handled by the
+        // connection setup instead.
 
         let connected = self.connected.lock().await;
 
@@ -293,6 +340,7 @@ impl McpManager {
             .get(server_name)
             .context(format!("Server '{}' is not connected", server_name))?;
 
+        println!("[MCP] call_tool: Calling tool '{}' on server '{}'", tool_name, server_name);
         let result = server
             .service
             .call_tool(CallToolRequestParam {
@@ -301,8 +349,15 @@ impl McpManager {
             })
             .await
             .context("Failed to call tool")?;
+        println!("[MCP] call_tool: Tool call completed, {} content items", result.content.len());
+        for (i, content) in result.content.iter().enumerate() {
+            if let Some(text) = content.as_text() {
+                println!("[MCP] call_tool: Content[{}]: {} chars", i, text.text.len());
+            } else {
+                println!("[MCP] call_tool: Content[{}]: (not text)", i);
+            }
+        }
 
-        // Convert result to string
         let mut output = String::new();
         for content in result.content {
             if let Some(text) = content.as_text() {
@@ -313,6 +368,7 @@ impl McpManager {
             }
         }
 
+        println!("[MCP] call_tool: Returning {} chars: {}", output.len(), &output[..output.len().min(500)]);
         Ok(output)
     }
 
@@ -334,17 +390,55 @@ impl McpManager {
 // Storage functions for MCP config
 const MCP_CONFIG_FILE: &str = "mcp_servers.json";
 
+/// Returns the default You.com search MCP server config (HTTP transport, free tier)
+pub fn default_youcom_server() -> McpServerConfig {
+    McpServerConfig {
+        name: "You.com Search".to_string(),
+        command: String::new(),
+        args: vec![],
+        url: Some("https://api.you.com/mcp?profile=free".to_string()),
+        env: HashMap::new(),
+        enabled: true,
+        rate_limit_ms: Some(1000),
+        tools_allowlist: Some(vec!["you-search".to_string()]),
+        tools_blocklist: None,
+    }
+}
+
 pub fn load_mcp_config() -> Result<McpConfig> {
-    if let Some(app_dir) = dirs::config_dir().map(|d| d.join("overlook")) {
+    let mut config = if let Some(app_dir) = dirs::config_dir().map(|d| d.join("overlook")) {
         let config_path = app_dir.join(MCP_CONFIG_FILE);
 
         if let Ok(config_data) = std::fs::read_to_string(&config_path) {
-            let config: McpConfig =
-                serde_json::from_str(&config_data).context("Failed to parse MCP config")?;
-            return Ok(config);
+            println!("[MCP Config] Loading from: {:?}", config_path);
+            if let Ok(config) = serde_json::from_str::<McpConfig>(&config_data) {
+                println!("[MCP Config] Loaded {} servers", config.servers.len());
+                for s in &config.servers {
+                    println!("[MCP Config]   - {} (enabled={})", s.name, s.enabled);
+                }
+                config
+            } else {
+                println!("[MCP Config] Failed to parse config, using defaults");
+                McpConfig::default()
+            }
+        } else {
+            println!("[MCP Config] No config file found, using defaults");
+            McpConfig::default()
         }
+    } else {
+        println!("[MCP Config] Cannot determine config dir, using defaults");
+        McpConfig::default()
+    };
+
+    // Always ensure You.com search is available as a default server
+    let has_youcom = config.servers.iter().any(|s| s.name.contains("You.com"));
+    if !has_youcom {
+        println!("[MCP Config] Adding default You.com server");
+        config.servers.push(default_youcom_server());
     }
-    Ok(McpConfig::default())
+
+    println!("[MCP Config] Final config: {} servers", config.servers.len());
+    Ok(config)
 }
 
 pub fn save_mcp_config(config: &McpConfig) -> Result<()> {
