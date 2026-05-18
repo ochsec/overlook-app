@@ -1,13 +1,14 @@
 // MCP Settings View - Manage MCP servers and tools
+use std::collections::HashMap;
 use crate::gpui_theme::GpuiTheme;
 use crate::mcp::{save_mcp_config, McpServerConfig};
 use crate::state::AppState;
+use gpui::prelude::FluentBuilder;
 use gpui::*;
 use gpui_component::button::{Button, ButtonVariants};
 use gpui_component::input::{Input, InputState};
 use gpui_component::switch::Switch;
 use gpui_component::{scroll::ScrollbarAxis, StyledExt};
-// Arc is not used in this file
 
 pub struct McpSettingsView {
     state_model: Entity<AppState>,
@@ -15,6 +16,8 @@ pub struct McpSettingsView {
     new_name_input: Entity<InputState>,
     new_command_input: Entity<InputState>,
     new_args_input: Entity<InputState>,
+    new_url_input: Entity<InputState>,
+    new_env_input: Entity<InputState>,
 }
 
 impl McpSettingsView {
@@ -25,12 +28,18 @@ impl McpSettingsView {
             cx.new(|cx| InputState::new(window, cx).placeholder("Command (e.g. npx, uvx)"));
         let new_args_input =
             cx.new(|cx| InputState::new(window, cx).placeholder("Arguments (space separated)"));
+        let new_url_input =
+            cx.new(|cx| InputState::new(window, cx).placeholder("URL (for remote servers, e.g. https://api.example.com/mcp)"));
+        let new_env_input =
+            cx.new(|cx| InputState::new(window, cx).placeholder("Env vars (KEY=VALUE, comma separated, e.g. API_KEY=abc123)"));
 
         Self {
             state_model,
             new_name_input,
             new_command_input,
             new_args_input,
+            new_url_input,
+            new_env_input,
         }
     }
 
@@ -65,6 +74,8 @@ impl McpSettingsView {
         let new_name_input = self.new_name_input.clone();
         let new_command_input = self.new_command_input.clone();
         let new_args_input = self.new_args_input.clone();
+        let new_url_input = self.new_url_input.clone();
+        let new_env_input = self.new_env_input.clone();
 
         div()
             .flex()
@@ -87,7 +98,9 @@ impl McpSettingsView {
                     .gap_2()
                     .child(Input::new(&new_name_input))
                     .child(Input::new(&new_command_input))
-                    .child(Input::new(&new_args_input)),
+                    .child(Input::new(&new_args_input))
+                    .child(Input::new(&new_url_input))
+                    .child(Input::new(&new_env_input)),
             )
             .child(
                 div().flex().justify_end().child(
@@ -98,13 +111,30 @@ impl McpSettingsView {
                             let name = new_name_input.read(cx).value().to_string();
                             let command = new_command_input.read(cx).value().to_string();
                             let args_str = new_args_input.read(cx).value().to_string();
+                            let url = new_url_input.read(cx).value().to_string();
+                            let env_str = new_env_input.read(cx).value().to_string();
 
-                            if name.is_empty() || command.is_empty() {
+                            if name.is_empty() {
                                 return;
                             }
 
                             let args = args_str.split_whitespace().map(|s| s.to_string()).collect();
-                            let new_server = McpServerConfig::new(name, command, args);
+                            let mut new_server = McpServerConfig::new(name, command, args);
+
+                            if !url.is_empty() {
+                                new_server.url = Some(url);
+                            }
+
+                            if !env_str.is_empty() {
+                                let env: HashMap<String, String> = env_str
+                                    .split(',')
+                                    .filter_map(|pair| {
+                                        let pair = pair.trim();
+                                        pair.split_once('=').map(|(k, v)| (k.to_string(), v.to_string()))
+                                    })
+                                    .collect();
+                                new_server.env = env;
+                            }
 
                             state_model.update(cx, |state, _| {
                                 let mut config = state.mcp_manager.config().clone();
@@ -117,7 +147,10 @@ impl McpSettingsView {
                             new_name_input.update(cx, |state, cx| state.set_value("", window, cx));
                             new_command_input
                                 .update(cx, |state, cx| state.set_value("", window, cx));
-                            new_args_input.update(cx, |state, cx| state.set_value("", window, cx));
+                            new_args_input
+                                .update(cx, |state, cx| state.set_value("", window, cx));
+                            new_url_input.update(cx, |state, cx| state.set_value("", window, cx));
+                            new_env_input.update(cx, |state, cx| state.set_value("", window, cx));
                         }),
                 ),
             )
@@ -166,12 +199,38 @@ impl McpSettingsView {
                                     .font_weight(FontWeight::BOLD)
                                     .child(server_name.clone()),
                             )
-                            .child(
-                                div()
-                                    .text_size(px(font_size - 2.0))
-                                    .text_color(theme.text_secondary)
-                                    .child(format!("{} {}", server.command, server.args.join(" "))),
-                            ),
+                            .when_some(server.url.clone(), |el, url| {
+                                el.child(
+                                    div()
+                                        .text_size(px(font_size - 2.0))
+                                        .text_color(theme.text_secondary)
+                                        .child(url),
+                                )
+                            })
+                            .when(!server.url.is_some(), |el| {
+                                el.child(
+                                    div()
+                                        .text_size(px(font_size - 2.0))
+                                        .text_color(theme.text_secondary)
+                                        .child(format!("{} {}", server.command, server.args.join(" "))),
+                                )
+                            })
+                            .when(!server.env.is_empty(), |el| {
+                                el.child(
+                                    div()
+                                        .text_size(px(font_size - 2.0))
+                                        .text_color(theme.text_secondary)
+                                        .child(format!(
+                                            "env: {}",
+                                            server
+                                                .env
+                                                .keys()
+                                                .cloned()
+                                                .collect::<Vec<_>>()
+                                                .join(", ")
+                                        )),
+                                )
+                            }),
                     )
                     .child(
                         div()
