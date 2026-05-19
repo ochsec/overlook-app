@@ -390,23 +390,8 @@ impl McpManager {
 // Storage functions for MCP config
 const MCP_CONFIG_FILE: &str = "mcp_servers.json";
 
-/// Returns the default You.com search MCP server config (HTTP transport, free tier)
-pub fn default_youcom_server() -> McpServerConfig {
-    McpServerConfig {
-        name: "You.com Search".to_string(),
-        command: String::new(),
-        args: vec![],
-        url: Some("https://api.you.com/mcp?profile=free".to_string()),
-        env: HashMap::new(),
-        enabled: true,
-        rate_limit_ms: Some(1000),
-        tools_allowlist: Some(vec!["you-search".to_string()]),
-        tools_blocklist: None,
-    }
-}
-
 pub fn load_mcp_config() -> Result<McpConfig> {
-    let mut config = if let Some(app_dir) = dirs::config_dir().map(|d| d.join("overlook")) {
+    let config = if let Some(app_dir) = dirs::config_dir().map(|d| d.join("overlook")) {
         let config_path = app_dir.join(MCP_CONFIG_FILE);
 
         if let Ok(config_data) = std::fs::read_to_string(&config_path) {
@@ -429,13 +414,6 @@ pub fn load_mcp_config() -> Result<McpConfig> {
         println!("[MCP Config] Cannot determine config dir, using defaults");
         McpConfig::default()
     };
-
-    // Always ensure You.com search is available as a default server
-    let has_youcom = config.servers.iter().any(|s| s.name.contains("You.com"));
-    if !has_youcom {
-        println!("[MCP Config] Adding default You.com server");
-        config.servers.push(default_youcom_server());
-    }
 
     println!("[MCP Config] Final config: {} servers", config.servers.len());
     Ok(config)
