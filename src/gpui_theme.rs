@@ -1,6 +1,4 @@
 // GPUI Theme System
-// Ported from egui theme system to GPUI
-
 use gpui::*;
 
 #[derive(Clone, Copy, Debug, PartialEq)]

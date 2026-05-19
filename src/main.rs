@@ -1,17 +1,12 @@
-// GPUI Migration - Phase 1: Infrastructure & View Routing
-// Original egui code preserved in git history (main branch)
-
 mod api;
 mod attachments;
 mod export;
-mod markdown; // New markdown renderer for GPUI
+mod markdown;
 mod storage;
-// mod theme;  // Old egui theme - backed up as reference
-mod gpui_theme; // New GPUI theme
+mod gpui_theme;
 mod tokens;
 mod tools;
 mod types;
-// mod ui;  // Old egui UI - backed up as ui.rs.egui_backup
 
 // New GPUI modules
 mod components;

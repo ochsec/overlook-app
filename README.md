@@ -1,6 +1,6 @@
 <img src="assets/overlook.png" alt="Overlook" width="50%" height="50%">
 
-A native desktop chat client for OpenRouter AI models built with Rust and egui.
+A native desktop chat client for OpenRouter AI models built with Rust and GPUI.
 
 ## Features
 
