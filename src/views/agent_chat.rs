@@ -1,3 +1,4 @@
+use crate::api::run_on_tokio_async;
 use crate::hermes_api::HermesClient;
 use crate::state::AppState;
 use crate::types::{Message, ProviderKind};
@@ -94,7 +95,11 @@ impl AgentChatView {
         let this = cx.entity().clone();
 
         cx.spawn(async move |_this, cx| {
-            let result = client.send_message_async(&message, &session_id).await;
+            // Run the reqwest call on the Tokio runtime (reqwest needs a Tokio reactor)
+            let result = run_on_tokio_async(async move {
+                client.send_message_async(&message, &session_id).await
+            })
+            .await;
 
             cx.update(|cx| {
                 this.update(cx, |this, cx| {
