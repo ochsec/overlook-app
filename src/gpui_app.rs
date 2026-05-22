@@ -2,6 +2,7 @@
 // Handles view routing and global state management
 
 use crate::api::{run_on_tokio_async, ApiClient};
+use crate::components::agent_sidebar::AgentSidebar;
 use crate::components::license_modal::LicenseModal;
 use crate::components::model_picker_modal::ModelPickerModal;
 use crate::components::sidebar::Sidebar;
@@ -17,6 +18,7 @@ use gpui_component::button::{Button, ButtonVariants};
 pub struct OverlookApp {
     state: Entity<AppState>,
     sidebar: Entity<Sidebar>,
+    agent_sidebar: Entity<AgentSidebar>,
     chat_view: Option<Entity<ChatView>>,
     chat_view_initialized: bool,
     agent_chat_view: Option<Entity<AgentChatView>>,
@@ -39,10 +41,12 @@ impl OverlookApp {
     pub fn new(cx: &mut Context<Self>) -> Self {
         let state = cx.new(|_| AppState::new());
         let sidebar = cx.new(|_| Sidebar::new(state.clone()));
+        let agent_sidebar = cx.new(|_| AgentSidebar::new(state.clone()));
         // Views will be created lazily when we have access to window
         Self {
             state,
             sidebar,
+            agent_sidebar,
             chat_view: None,
             chat_view_initialized: false,
             agent_chat_view: None,
@@ -460,6 +464,7 @@ impl Render for OverlookApp {
 
         // Clone entities for use in element tree
         let sidebar = self.sidebar.clone();
+        let agent_sidebar = self.agent_sidebar.clone();
         let chat_view = self.chat_view.clone();
         let agent_chat_view = self.agent_chat_view.clone();
         let settings_view = self.settings_view.clone();
@@ -485,6 +490,8 @@ impl Render for OverlookApp {
                     .overflow_hidden()
                     // Only show sidebar in Chat view
                     .when(current_view == ViewMode::Chat, |this| this.child(sidebar))
+                    // Show agent sidebar in Agent Chat view
+                    .when(current_view == ViewMode::AgentChat, |this| this.child(agent_sidebar))
                     // Main content area
                     .child(div().flex_1().overflow_hidden().child(
                         self.render_main_content_element(

@@ -10,7 +10,7 @@
 //! - Windows: `%APPDATA%\overlook\`
 
 use crate::gpui_theme::ThemeType;
-use crate::types::{ChatMap, FolderMap, Project, ProjectMap, ProviderKeys};
+use crate::types::{AgentThreadMap, ChatMap, FolderMap, Project, ProjectMap, ProviderKeys};
 use anyhow::{Context, Result};
 // use anyhow::anyhow;
 // use base64::prelude::BASE64_STANDARD;
@@ -24,6 +24,7 @@ use anyhow::{Context, Result};
 // const SERVICE_NAME: &str = "overlook";
 // const MASTER_KEY_ACCOUNT: &str = "master-key";
 const CHAT_FILE_NAME: &str = "chats.json";
+const AGENT_THREADS_FILE_NAME: &str = "agent_threads.json";
 const PROJECTS_FILE_NAME: &str = "projects.json";
 const API_KEYS_FILE_NAME: &str = "api_keys.json";
 // const VERSION_BYTE: u8 = 1;
@@ -77,6 +78,30 @@ impl Storage {
             }
         }
         Ok(ChatMap::new())
+    }
+
+    pub fn load_agent_threads() -> Result<AgentThreadMap> {
+        if let Some(data_dir) = dirs::config_dir() {
+            let app_dir = data_dir.join("overlook");
+            let path = app_dir.join(AGENT_THREADS_FILE_NAME);
+
+            if let Ok(data) = std::fs::read_to_string(path) {
+                let threads = serde_json::from_str(&data)
+                    .context("failed to deserialize agent threads JSON")?;
+                return Ok(threads);
+            }
+        }
+        Ok(AgentThreadMap::new())
+    }
+
+    pub fn save_agent_threads(threads: &AgentThreadMap) -> Result<()> {
+        if let Some(data_dir) = dirs::config_dir() {
+            let app_dir = data_dir.join("overlook");
+            std::fs::create_dir_all(&app_dir)?;
+            let json = serde_json::to_string_pretty(threads)?;
+            std::fs::write(app_dir.join(AGENT_THREADS_FILE_NAME), json)?;
+        }
+        Ok(())
     }
 
     pub fn save_chats(chats: &ChatMap) -> Result<()> {

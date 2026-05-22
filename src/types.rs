@@ -320,6 +320,19 @@ pub type ProjectMap = HashMap<String, Project>;
 // Legacy type for migration
 pub type FolderMap = HashMap<String, String>;
 
+/// A conversation thread with the Hermes Agent
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct AgentThread {
+    pub id: String,
+    pub title: String,
+    pub messages: Vec<Message>,
+    pub session_id: String,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+pub type AgentThreadMap = HashMap<String, AgentThread>;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Tool {
     pub name: String,

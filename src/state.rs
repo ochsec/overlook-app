@@ -6,7 +6,7 @@ use crate::license::{self, LicenseData, LicenseStatus};
 use crate::mcp::{load_mcp_config, McpManager};
 use crate::storage::Storage;
 use crate::types::{
-    Chat, ChatMap, ModelDescriptor, Project, ProjectMap, ProviderKeys, ProviderKind,
+    AgentThreadMap, Chat, ChatMap, ModelDescriptor, Project, ProjectMap, ProviderKeys, ProviderKind,
 };
 use gpui::*;
 use std::sync::Arc;
@@ -47,6 +47,10 @@ pub struct AppState {
     pub projects: ProjectMap,
     pub current_chat_id: Option<String>,
     pub current_project_id: Option<String>,
+
+    // Agent chat state
+    pub agent_threads: AgentThreadMap,
+    pub current_agent_thread_id: Option<String>,
 
     // UI state
     pub show_project_modal: bool,
@@ -115,6 +119,9 @@ impl AppState {
             projects: Storage::load_projects().unwrap_or_default(),
             current_chat_id: None,
             current_project_id: None,
+
+            agent_threads: Storage::load_agent_threads().unwrap_or_default(),
+            current_agent_thread_id: None,
 
             show_project_modal: false,
             show_model_picker_modal: false,

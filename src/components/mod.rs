@@ -1,6 +1,7 @@
 // UI Components for GPUI
 // Reusable components for the Overlook application
 
+pub mod agent_sidebar;
 pub mod attachment_preview;
 pub mod chat_header;
 pub mod chat_input;

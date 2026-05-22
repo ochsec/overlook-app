@@ -1,17 +1,18 @@
 use crate::api::run_on_tokio_async;
 use crate::hermes_api::HermesClient;
 use crate::state::AppState;
-use crate::types::{Message, ProviderKind};
+use crate::storage::Storage;
+use crate::types::{AgentThread, Message, ProviderKind};
+use chrono::Utc;
 use gpui::prelude::*;
 use gpui::*;
 use gpui_component::button::{Button, ButtonVariants};
 use gpui_component::input::{Input, InputEvent, InputState};
 use gpui_component::Disableable;
+use uuid::Uuid;
 
 pub struct AgentChatView {
     state: Entity<AppState>,
-    session_id: String,
-    messages: Vec<Message>,
     input: Entity<InputState>,
     sending: bool,
     error_message: Option<String>,
@@ -32,8 +33,6 @@ impl AgentChatView {
 
         Self {
             state,
-            session_id: uuid::Uuid::new_v4().to_string(),
-            messages: Vec::new(),
             input,
             sending: false,
             error_message: None,
@@ -42,10 +41,20 @@ impl AgentChatView {
     }
 
     /// Build a HermesClient using the current hermes_url and hermes_api_key from settings.
-    /// This ensures URL/key changes in Settings take effect immediately.
     fn get_client(&self, cx: &Context<Self>) -> HermesClient {
         let keys = &self.state.read(cx).api_keys;
         HermesClient::with_base_url_and_key(keys.hermes_url.clone(), keys.hermes_api_key.clone())
+    }
+
+    /// Get the session_id for the current thread (or empty string if no thread selected).
+    fn current_session_id(&self, cx: &Context<Self>) -> String {
+        let state = self.state.read(cx);
+        state
+            .current_agent_thread_id
+            .as_ref()
+            .and_then(|id| state.agent_threads.get(id))
+            .map(|t| t.session_id.clone())
+            .unwrap_or_default()
     }
 
     fn handle_input_event(
@@ -76,9 +85,50 @@ impl AgentChatView {
             return;
         }
 
-        // Add user message to UI immediately
+        // Ensure we have a thread selected; create one if needed
+        let state_model = self.state.clone();
+        let has_thread = self.state.read(cx).current_agent_thread_id.is_some();
+        if !has_thread {
+            let thread_id = Uuid::new_v4().to_string();
+            let session_id = Uuid::new_v4().to_string();
+            let now = Utc::now();
+            let title = if message.len() > 40 {
+                format!("{}...", &message[..37].trim_end())
+            } else {
+                message.clone()
+            };
+            let thread = AgentThread {
+                id: thread_id.clone(),
+                title,
+                messages: Vec::new(),
+                session_id,
+                created_at: now,
+                updated_at: now,
+            };
+            state_model.update(cx, |state, _| {
+                state.agent_threads.insert(thread_id.clone(), thread);
+                state.current_agent_thread_id = Some(thread_id);
+            });
+        }
+
+        // Add user message to the current thread
         let user_msg = Message::new_user(message.clone());
-        self.messages.push(user_msg);
+        let thread_id = self.state.read(cx).current_agent_thread_id.clone().unwrap();
+
+        state_model.update(cx, |state, _| {
+            if let Some(thread) = state.agent_threads.get_mut(&thread_id) {
+                // Update title from first message if still default
+                if thread.title == "New Thread" {
+                    thread.title = if message.len() > 40 {
+                        format!("{}...", &message[..37].trim_end())
+                    } else {
+                        message.clone()
+                    };
+                }
+                thread.messages.push(user_msg);
+                thread.updated_at = Utc::now();
+            }
+        });
 
         // Clear input field
         self.input.update(cx, |input_state, cx| {
@@ -91,7 +141,7 @@ impl AgentChatView {
 
         // Build client from current settings so URL changes take effect
         let client = self.get_client(cx);
-        let session_id = self.session_id.clone();
+        let session_id = self.current_session_id(cx);
         let this = cx.entity().clone();
 
         cx.spawn(async move |_this, cx| {
@@ -105,13 +155,26 @@ impl AgentChatView {
                 this.update(cx, |this, cx| {
                     match result {
                         Ok((response, new_session_id)) => {
-                            this.session_id = new_session_id;
                             let assistant_msg = Message::new_assistant(
                                 response,
                                 ProviderKind::Hermes,
                                 "hermes-agent".to_string(),
                             );
-                            this.messages.push(assistant_msg);
+
+                            // Save assistant message and updated session_id to thread
+                            let tid = this.state.read(cx).current_agent_thread_id.clone();
+                            if let Some(tid) = tid {
+                                this.state.update(cx, |state, _| {
+                                    if let Some(thread) = state.agent_threads.get_mut(&tid) {
+                                        thread.session_id = new_session_id;
+                                        thread.messages.push(assistant_msg);
+                                        thread.updated_at = Utc::now();
+                                    }
+                                    if let Err(e) = Storage::save_agent_threads(&state.agent_threads) {
+                                        eprintln!("Failed to save agent threads: {}", e);
+                                    }
+                                });
+                            }
                         }
                         Err(e) => {
                             this.error_message = Some(format!("Error: {}", e));
@@ -127,8 +190,20 @@ impl AgentChatView {
     }
 
     fn clear_chat(&mut self, cx: &mut Context<Self>) {
-        self.messages.clear();
-        self.session_id = uuid::Uuid::new_v4().to_string();
+        // Clear messages in the current thread
+        let tid = self.state.read(cx).current_agent_thread_id.clone();
+        if let Some(tid) = tid {
+            self.state.update(cx, |state, _| {
+                if let Some(thread) = state.agent_threads.get_mut(&tid) {
+                    thread.messages.clear();
+                    thread.session_id = Uuid::new_v4().to_string();
+                    thread.updated_at = Utc::now();
+                }
+                if let Err(e) = Storage::save_agent_threads(&state.agent_threads) {
+                    eprintln!("Failed to save agent threads: {}", e);
+                }
+            });
+        }
         self.error_message = None;
         cx.notify();
     }
@@ -138,6 +213,17 @@ impl Render for AgentChatView {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = &self.state.read(cx).theme;
         let hermes_url = self.state.read(cx).api_keys.hermes_url.clone();
+        let has_thread = self.state.read(cx).current_agent_thread_id.is_some();
+
+        // Get messages from current thread
+        let messages: Vec<Message> = self
+            .state
+            .read(cx)
+            .current_agent_thread_id
+            .as_ref()
+            .and_then(|id| self.state.read(cx).agent_threads.get(id))
+            .map(|t| t.messages.clone())
+            .unwrap_or_default();
 
         div()
             .flex()
@@ -172,14 +258,16 @@ impl Render for AgentChatView {
                                     .text_color(theme.text_muted)
                                     .child(format!("Endpoint: {}", hermes_url)),
                             )
-                            .child(
-                                Button::new("clear_agent_chat")
-                                    .label("Clear")
-                                    .compact()
-                                    .on_click(cx.listener(|this, _, _, cx| {
-                                        this.clear_chat(cx);
-                                    })),
-                            ),
+                            .when(has_thread, |el| {
+                                el.child(
+                                    Button::new("clear_agent_chat")
+                                        .label("Clear")
+                                        .compact()
+                                        .on_click(cx.listener(|this, _, _, cx| {
+                                            this.clear_chat(cx);
+                                        })),
+                                )
+                            }),
                     ),
             )
             // Chat messages area
@@ -193,7 +281,27 @@ impl Render for AgentChatView {
                     .gap_2()
                     .overflow_y_scroll()
                     .track_scroll(&self.scroll_handle)
-                    .children(self.messages.iter().map(|msg| {
+                    .when(messages.is_empty() && !self.sending, |el| {
+                        el.child(
+                            div()
+                                .flex()
+                                .flex_col()
+                                .items_center()
+                                .justify_center()
+                                .flex_1()
+                                .text_color(theme.text_muted)
+                                .child(
+                                    div()
+                                        .text_size(px(16.0))
+                                        .child(if has_thread {
+                                            "Send a message to start chatting"
+                                        } else {
+                                            "Select or create a thread to begin"
+                                        }),
+                                ),
+                        )
+                    })
+                    .children(messages.iter().map(|msg| {
                         let is_user = msg.role == "user";
                         div()
                             .flex()
@@ -247,9 +355,7 @@ impl Render for AgentChatView {
                     .border_t_1()
                     .border_color(theme.border)
                     .bg(theme.surface)
-                    .child(
-                        div().flex_1().child(Input::new(&self.input)),
-                    )
+                    .child(div().flex_1().child(Input::new(&self.input)))
                     .child(
                         Button::new("send_agent_msg")
                             .label(if self.sending { "Sending..." } else { "Send" })
