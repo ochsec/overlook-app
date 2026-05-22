@@ -141,6 +141,9 @@ fn candidate_model_names(provider: ProviderKind, model: &str) -> Vec<String> {
         ProviderKind::LMStudio | ProviderKind::Ollama => {
             // Local providers don't need default model names for completion
         }
+        ProviderKind::Hermes => {
+            // Hermes doesn't require default model names for completion
+        }
     }
 
     names.sort();

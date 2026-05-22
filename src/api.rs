@@ -579,6 +579,7 @@ impl ApiClient {
             ProviderKind::Anthropic => self.load_anthropic_models(api_key).await,
             ProviderKind::LMStudio => self.load_lmstudio_models(api_key).await,
             ProviderKind::Ollama => self.load_ollama_models(api_key).await,
+            ProviderKind::Hermes => Ok(vec![]), // Hermes doesn't use model listing
         }
     }
 
@@ -925,6 +926,9 @@ impl ApiClient {
             ProviderKind::Anthropic => self.send_anthropic_chat(api_key, model, &messages).await,
             ProviderKind::LMStudio => self.send_lmstudio_chat(api_key, model, &messages).await,
             ProviderKind::Ollama => self.send_ollama_chat(api_key, model, &messages).await,
+            ProviderKind::Hermes => {
+                Err(anyhow::anyhow!("Use AgentChat view for Hermes conversations"))
+            }
         }
     }
 
@@ -1621,6 +1625,10 @@ impl ApiClient {
 
                 Ok(stream)
             }
+            ProviderKind::Hermes => {
+                // Hermes uses its own Agent client, not the streaming API
+                Err(anyhow!("Use AgentChat view for Hermes conversations"))
+            }
         }
     }
 
@@ -1641,6 +1649,15 @@ impl ApiClient {
             }
             ProviderKind::Ollama => {
                 let url = custom_url.unwrap_or("http://localhost:11434");
+                let base = url.trim_end_matches('/');
+                if base.ends_with("/v1") {
+                    base.to_string()
+                } else {
+                    format!("{}/v1", base)
+                }
+            }
+            ProviderKind::Hermes => {
+                let url = custom_url.unwrap_or("http://localhost:8765");
                 let base = url.trim_end_matches('/');
                 if base.ends_with("/v1") {
                     base.to_string()

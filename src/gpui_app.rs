@@ -7,8 +7,8 @@ use crate::components::model_picker_modal::ModelPickerModal;
 use crate::components::sidebar::Sidebar;
 use crate::state::{AppState, ViewMode};
 use crate::views::{
-    chat_view::ChatView, export_view::ExportView, mcp_settings_view::McpSettingsView,
-    organize_view::OrganizeView, settings_view::SettingsView,
+    agent_chat::AgentChatView, chat_view::ChatView, export_view::ExportView,
+    mcp_settings_view::McpSettingsView, organize_view::OrganizeView, settings_view::SettingsView,
 };
 use gpui::prelude::*;
 use gpui::*;
@@ -19,6 +19,8 @@ pub struct OverlookApp {
     sidebar: Entity<Sidebar>,
     chat_view: Option<Entity<ChatView>>,
     chat_view_initialized: bool,
+    agent_chat_view: Option<Entity<AgentChatView>>,
+    agent_chat_view_initialized: bool,
     settings_view: Option<Entity<SettingsView>>,
     settings_view_initialized: bool,
     organize_view: Option<Entity<OrganizeView>>,
@@ -43,6 +45,8 @@ impl OverlookApp {
             sidebar,
             chat_view: None,
             chat_view_initialized: false,
+            agent_chat_view: None,
+            agent_chat_view_initialized: false,
             settings_view: None,
             settings_view_initialized: false,
             organize_view: None,
@@ -250,6 +254,14 @@ impl OverlookApp {
         }
     }
 
+    fn ensure_agent_chat_view(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if !self.agent_chat_view_initialized {
+            let state = self.state.clone();
+            self.agent_chat_view = Some(cx.new(|cx| AgentChatView::new(state, window, cx)));
+            self.agent_chat_view_initialized = true;
+        }
+    }
+
     fn render_menu_bar(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
         let state_model = self.state.clone();
@@ -286,6 +298,18 @@ impl OverlookApp {
                         btn.on_click(move |_, _, app| {
                             state_model.update(app, |state, _| {
                                 state.switch_view(ViewMode::Chat);
+                            });
+                        })
+                    })
+                    .child({
+                        let state_model = state_model.clone();
+                        let mut btn = Button::new("nav_agent").label("Agent").compact();
+                        if state.current_view == ViewMode::AgentChat {
+                            btn = btn.primary();
+                        }
+                        btn.on_click(move |_, _, app| {
+                            state_model.update(app, |state, _| {
+                                state.switch_view(ViewMode::AgentChat);
                             });
                         })
                     })
@@ -351,6 +375,7 @@ impl OverlookApp {
         &self,
         current_view: ViewMode,
         chat_view: Option<Entity<ChatView>>,
+        agent_chat_view: Option<Entity<AgentChatView>>,
         settings_view: Option<Entity<SettingsView>>,
         organize_view: Option<Entity<OrganizeView>>,
         mcp_settings_view: Option<Entity<McpSettingsView>>,
@@ -362,6 +387,15 @@ impl OverlookApp {
                     chat_view.into_any_element()
                 } else {
                     div().child("Chat view not initialized").into_any_element()
+                }
+            }
+            ViewMode::AgentChat => {
+                if let Some(agent_chat_view) = agent_chat_view {
+                    agent_chat_view.into_any_element()
+                } else {
+                    div()
+                        .child("Agent Chat view not initialized")
+                        .into_any_element()
                 }
             }
             ViewMode::Settings => {
@@ -403,6 +437,7 @@ impl Render for OverlookApp {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         // Ensure views are initialized (need window)
         self.ensure_chat_view(window, cx);
+        self.ensure_agent_chat_view(window, cx);
         self.ensure_settings_view(window, cx);
         self.ensure_organize_view(window, cx);
         self.ensure_mcp_settings_view(window, cx);
@@ -426,6 +461,7 @@ impl Render for OverlookApp {
         // Clone entities for use in element tree
         let sidebar = self.sidebar.clone();
         let chat_view = self.chat_view.clone();
+        let agent_chat_view = self.agent_chat_view.clone();
         let settings_view = self.settings_view.clone();
         let organize_view = self.organize_view.clone();
         let mcp_settings_view = self.mcp_settings_view.clone();
@@ -454,6 +490,7 @@ impl Render for OverlookApp {
                         self.render_main_content_element(
                             current_view,
                             chat_view,
+                            agent_chat_view,
                             settings_view,
                             organize_view,
                             mcp_settings_view,

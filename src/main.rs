@@ -1,6 +1,7 @@
 mod api;
 mod attachments;
 mod export;
+mod hermes_api;
 mod markdown;
 mod storage;
 mod gpui_theme;

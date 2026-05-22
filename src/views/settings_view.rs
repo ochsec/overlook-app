@@ -19,6 +19,7 @@ pub struct SettingsView {
     anthropic_input: Entity<InputState>,
     lmstudio_input: Entity<InputState>,
     ollama_input: Entity<InputState>,
+    hermes_input: Entity<InputState>,
     // Slider state for font size
     font_slider: Entity<SliderState>,
     // License key input
@@ -33,6 +34,7 @@ impl SettingsView {
             anthropic_key,
             lmstudio_url,
             ollama_url,
+            hermes_url,
             font_size,
             license_key,
         ) = {
@@ -43,6 +45,7 @@ impl SettingsView {
                 app_state.api_keys.anthropic.clone(),
                 app_state.api_keys.lmstudio_url.clone(),
                 app_state.api_keys.ollama_url.clone(),
+                app_state.api_keys.hermes_url.clone(),
                 app_state.font_size,
                 app_state
                     .license_data
@@ -79,6 +82,11 @@ impl SettingsView {
             InputState::new(window, cx)
                 .placeholder("http://localhost:11434")
                 .default_value(ollama_url)
+        });
+        let hermes_input = cx.new(|cx| {
+            InputState::new(window, cx)
+                .placeholder("http://localhost:8765")
+                .default_value(hermes_url)
         });
 
         let font_slider = cx.new(|_cx| {
@@ -118,6 +126,7 @@ impl SettingsView {
             anthropic_input,
             lmstudio_input,
             ollama_input,
+            hermes_input,
             font_slider,
             license_input,
         }
@@ -263,6 +272,13 @@ impl SettingsView {
                 font_size,
             ))
             .child(self.render_api_key_input("Ollama", &self.ollama_input, true, theme, font_size))
+            .child(self.render_api_key_input(
+                "Hermes Agent",
+                &self.hermes_input,
+                true,
+                theme,
+                font_size,
+            ))
     }
 
     fn render_appearance_section(
@@ -508,6 +524,7 @@ impl SettingsView {
         let anthropic_input = self.anthropic_input.clone();
         let lmstudio_input = self.lmstudio_input.clone();
         let ollama_input = self.ollama_input.clone();
+        let hermes_input = self.hermes_input.clone();
 
         div().flex().justify_end().p_4().child(
             Button::new("save_settings")
@@ -519,6 +536,7 @@ impl SettingsView {
                     let anthropic = anthropic_input.read(cx).value().to_string();
                     let lmstudio = lmstudio_input.read(cx).value().to_string();
                     let ollama = ollama_input.read(cx).value().to_string();
+                    let hermes = hermes_input.read(cx).value().to_string();
 
                     state_model.update(cx, |state, _| {
                         state.api_keys.openrouter = openrouter;
@@ -526,6 +544,7 @@ impl SettingsView {
                         state.api_keys.anthropic = anthropic;
                         state.api_keys.lmstudio_url = lmstudio;
                         state.api_keys.ollama_url = ollama;
+                        state.api_keys.hermes_url = hermes;
 
                         if let Err(e) = crate::storage::Storage::save_api_keys(&state.api_keys) {
                             println!("Failed to save API keys: {}", e);

@@ -14,6 +14,7 @@ use std::sync::Arc;
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub enum ViewMode {
     Chat,
+    AgentChat,
     Settings,
     Export,
     Organize,

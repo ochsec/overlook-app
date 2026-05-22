@@ -393,6 +393,7 @@ impl Storage {
                 crate::types::ProviderKind::Anthropic => "Anthropic",
                 crate::types::ProviderKind::LMStudio => "LMStudio",
                 crate::types::ProviderKind::Ollama => "Ollama",
+                crate::types::ProviderKind::Hermes => "Hermes",
             };
             std::fs::write(app_dir.join("last_provider.txt"), provider_str)?;
         }

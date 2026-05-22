@@ -10,6 +10,7 @@ pub enum ProviderKind {
     Anthropic,
     LMStudio,
     Ollama,
+    Hermes,
 }
 
 impl ProviderKind {
@@ -21,6 +22,7 @@ impl ProviderKind {
             ProviderKind::Anthropic => "anthropic",
             ProviderKind::LMStudio => "lmstudio",
             ProviderKind::Ollama => "ollama",
+            ProviderKind::Hermes => "hermes",
         }
     }
 
@@ -31,16 +33,18 @@ impl ProviderKind {
             ProviderKind::Anthropic => "Anthropic",
             ProviderKind::LMStudio => "LM Studio",
             ProviderKind::Ollama => "Ollama",
+            ProviderKind::Hermes => "Hermes Agent",
         }
     }
 
-    pub fn all() -> [ProviderKind; 5] {
+    pub fn all() -> [ProviderKind; 6] {
         [
             ProviderKind::OpenRouter,
             ProviderKind::OpenAI,
             ProviderKind::Anthropic,
             ProviderKind::LMStudio,
             ProviderKind::Ollama,
+            ProviderKind::Hermes,
         ]
     }
 }
@@ -60,6 +64,12 @@ pub struct ProviderKeys {
     pub lmstudio_url: String,
     #[serde(default)]
     pub ollama_url: String,
+    #[serde(default = "default_hermes_url")]
+    pub hermes_url: String,
+}
+
+fn default_hermes_url() -> String {
+    "http://localhost:8765".to_string()
 }
 
 impl ProviderKeys {
@@ -70,6 +80,7 @@ impl ProviderKeys {
             ProviderKind::Anthropic => &self.anthropic,
             ProviderKind::LMStudio => &self.lmstudio_url,
             ProviderKind::Ollama => &self.ollama_url,
+            ProviderKind::Hermes => &self.hermes_url,
         }
     }
 
@@ -80,6 +91,7 @@ impl ProviderKeys {
             ProviderKind::Anthropic => &mut self.anthropic,
             ProviderKind::LMStudio => &mut self.lmstudio_url,
             ProviderKind::Ollama => &mut self.ollama_url,
+            ProviderKind::Hermes => &mut self.hermes_url,
         }
     }
 }

@@ -1,6 +1,7 @@
 // Application Views for GPUI
 // Main view components for different screens
 
+pub mod agent_chat;
 pub mod chat_view;
 pub mod export_view;
 pub mod mcp_settings_view;
