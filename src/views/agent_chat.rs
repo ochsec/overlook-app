@@ -41,11 +41,11 @@ impl AgentChatView {
         }
     }
 
-    /// Build a HermesClient using the current hermes_url from settings.
-    /// This ensures URL changes in Settings take effect immediately.
+    /// Build a HermesClient using the current hermes_url and hermes_api_key from settings.
+    /// This ensures URL/key changes in Settings take effect immediately.
     fn get_client(&self, cx: &Context<Self>) -> HermesClient {
-        let url = self.state.read(cx).api_keys.hermes_url.clone();
-        HermesClient::with_base_url(url)
+        let keys = &self.state.read(cx).api_keys;
+        HermesClient::with_base_url_and_key(keys.hermes_url.clone(), keys.hermes_api_key.clone())
     }
 
     fn handle_input_event(

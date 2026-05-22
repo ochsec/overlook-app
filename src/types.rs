@@ -66,10 +66,12 @@ pub struct ProviderKeys {
     pub ollama_url: String,
     #[serde(default = "default_hermes_url")]
     pub hermes_url: String,
+    #[serde(default)]
+    pub hermes_api_key: String,
 }
 
 fn default_hermes_url() -> String {
-    "http://localhost:8765".to_string()
+    "http://localhost:8642".to_string()
 }
 
 impl ProviderKeys {
