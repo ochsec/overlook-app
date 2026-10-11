@@ -174,6 +174,26 @@ impl ChatInput {
         let mut api_messages = existing_messages;
         api_messages.push(user_message);
 
+        // Prepend the custom system prompt (if set) as a system-role message
+        let system_prompt = state_model.read(cx).api_keys.system_prompt.clone();
+        if !system_prompt.trim().is_empty() {
+            api_messages.insert(
+                0,
+                Message {
+                    role: "system".to_string(),
+                    content: system_prompt,
+                    timestamp: Utc::now(),
+                    attachments: Vec::new(),
+                    provider: None,
+                    model: None,
+                    search_results: None,
+                    tool_calls: None,
+                    tool_result: None,
+                    title: None,
+                },
+            );
+        }
+
         // Check if streaming is enabled
         let streaming_enabled = state_model.read(cx).streaming_enabled;
 
@@ -262,6 +282,27 @@ impl ChatInput {
                 last_user_query,
             )
         };
+
+        // Prepend the custom system prompt (if set) as a system-role message
+        let system_prompt = state_model.read(cx).api_keys.system_prompt.clone();
+        let mut api_messages = api_messages;
+        if !system_prompt.trim().is_empty() {
+            api_messages.insert(
+                0,
+                Message {
+                    role: "system".to_string(),
+                    content: system_prompt,
+                    timestamp: Utc::now(),
+                    attachments: Vec::new(),
+                    provider: None,
+                    model: None,
+                    search_results: None,
+                    tool_calls: None,
+                    tool_result: None,
+                    title: None,
+                },
+            );
+        }
 
         // Set sending state
         state_model.update(cx, |state, _| {

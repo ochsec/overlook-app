@@ -142,12 +142,15 @@ impl AgentChatView {
         // Build client from current settings so URL changes take effect
         let client = self.get_client(cx);
         let session_id = self.current_session_id(cx);
+        let system_prompt = self.state.read(cx).api_keys.system_prompt.clone();
         let this = cx.entity().clone();
 
         cx.spawn(async move |_this, cx| {
             // Run the reqwest call on the Tokio runtime (reqwest needs a Tokio reactor)
             let result = run_on_tokio_async(async move {
-                client.send_message_async(&message, &session_id).await
+                client
+                    .send_message_async(&message, &session_id, &system_prompt)
+                    .await
             })
             .await;
 

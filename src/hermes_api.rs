@@ -82,9 +82,10 @@ impl HermesClient {
         &self,
         message: &str,
         session_id: &str,
+        system_prompt: &str,
     ) -> Result<(String, String)> {
         let rt = get_tokio_runtime();
-        rt.block_on(self.send_message_async(message, session_id))
+        rt.block_on(self.send_message_async(message, session_id, system_prompt))
     }
 
     /// Async version — sends to /v1/chat/completions and parses the response.
@@ -95,15 +96,26 @@ impl HermesClient {
         &self,
         message: &str,
         session_id: &str,
+        system_prompt: &str,
     ) -> Result<(String, String)> {
         let url = format!("{}/v1/chat/completions", self.base_url);
 
+        // Inject the custom system prompt (if set) before the user message
+        let mut messages = Vec::with_capacity(2);
+        if !system_prompt.trim().is_empty() {
+            messages.push(ChatMessage {
+                role: "system".to_string(),
+                content: system_prompt.to_string(),
+            });
+        }
+        messages.push(ChatMessage {
+            role: "user".to_string(),
+            content: message.to_string(),
+        });
+
         let request_body = ChatCompletionRequest {
             model: "hermes-agent".to_string(),
-            messages: vec![ChatMessage {
-                role: "user".to_string(),
-                content: message.to_string(),
-            }],
+            messages,
             stream: false,
         };
 

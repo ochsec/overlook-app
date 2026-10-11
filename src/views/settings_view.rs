@@ -21,6 +21,7 @@ pub struct SettingsView {
     ollama_input: Entity<InputState>,
     hermes_input: Entity<InputState>,
     hermes_key_input: Entity<InputState>,
+    hermes_system_prompt_input: Entity<InputState>,
     // Slider state for font size
     font_slider: Entity<SliderState>,
     // License key input
@@ -37,6 +38,7 @@ impl SettingsView {
             ollama_url,
             hermes_url,
             hermes_api_key,
+            hermes_system_prompt,
             font_size,
             license_key,
         ) = {
@@ -49,6 +51,7 @@ impl SettingsView {
                 app_state.api_keys.ollama_url.clone(),
                 app_state.api_keys.hermes_url.clone(),
                 app_state.api_keys.hermes_api_key.clone(),
+                app_state.api_keys.system_prompt.clone(),
                 app_state.font_size,
                 app_state
                     .license_data
@@ -97,6 +100,13 @@ impl SettingsView {
                 .default_value(hermes_api_key)
                 .masked(true)
         });
+        let hermes_system_prompt_input = cx.new(|cx| {
+            InputState::new(window, cx)
+                .multi_line()
+                .auto_grow(3, 10)
+                .placeholder("Custom system prompt (optional)")
+                .default_value(hermes_system_prompt)
+        });
 
         let font_slider = cx.new(|_cx| {
             SliderState::new()
@@ -137,6 +147,7 @@ impl SettingsView {
             ollama_input,
             hermes_input,
             hermes_key_input,
+            hermes_system_prompt_input,
             font_slider,
             license_input,
         }
@@ -296,6 +307,42 @@ impl SettingsView {
                 theme,
                 font_size,
             ))
+            .child(self.render_system_prompt_input(theme, font_size))
+    }
+
+    /// Render the multi-line system prompt input for Agent chat
+    fn render_system_prompt_input(&self, theme: &GpuiTheme, font_size: f32) -> impl IntoElement {
+        let input = self.hermes_system_prompt_input.clone();
+
+        div()
+            .flex()
+            .flex_col()
+            .gap_2()
+            .p_4()
+            .rounded_lg()
+            .border_1()
+            .border_color(theme.border)
+            .child(
+                div()
+                    .text_size(px(font_size - 2.0))
+                    .font_weight(FontWeight::SEMIBOLD)
+                    .text_color(theme.text_primary)
+                    .child("Agent System Prompt"),
+            )
+            .child(
+                div()
+                    .flex_1()
+                    .text_size(px(font_size))
+                    .child(Input::new(&input)),
+            )
+            .child(
+                div()
+                    .text_size(px(font_size - 4.0))
+                    .text_color(theme.text_muted)
+                    .child(
+                        "Sent to the Hermes agent as a system message before each prompt. Saved with Save Settings.",
+                    ),
+            )
     }
 
     fn render_appearance_section(
@@ -543,6 +590,7 @@ impl SettingsView {
         let ollama_input = self.ollama_input.clone();
         let hermes_input = self.hermes_input.clone();
         let hermes_key_input = self.hermes_key_input.clone();
+        let hermes_system_prompt_input = self.hermes_system_prompt_input.clone();
 
         div().flex().justify_end().p_4().child(
             Button::new("save_settings")
@@ -556,6 +604,8 @@ impl SettingsView {
                     let ollama = ollama_input.read(cx).value().to_string();
                     let hermes = hermes_input.read(cx).value().to_string();
                     let hermes_key = hermes_key_input.read(cx).value().to_string();
+                    let hermes_system_prompt =
+                        hermes_system_prompt_input.read(cx).value().to_string();
 
                     state_model.update(cx, |state, _| {
                         state.api_keys.openrouter = openrouter;
@@ -565,6 +615,7 @@ impl SettingsView {
                         state.api_keys.ollama_url = ollama;
                         state.api_keys.hermes_url = hermes;
                         state.api_keys.hermes_api_key = hermes_key;
+                        state.api_keys.system_prompt = hermes_system_prompt;
 
                         if let Err(e) = crate::storage::Storage::save_api_keys(&state.api_keys) {
                             println!("Failed to save API keys: {}", e);

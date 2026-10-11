@@ -68,6 +68,9 @@ pub struct ProviderKeys {
     pub hermes_url: String,
     #[serde(default)]
     pub hermes_api_key: String,
+    /// Optional custom system prompt injected before chat requests (all providers)
+    #[serde(default, alias = "hermes_system_prompt")]
+    pub system_prompt: String,
 }
 
 fn default_hermes_url() -> String {
